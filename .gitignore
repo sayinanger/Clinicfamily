@@ -1,0 +1,12 @@
+# ไลบรารีที่ติดตั้ง (ติดตั้งใหม่ได้ด้วย npm install)
+node_modules
+# ไฟล์ที่ build แล้ว
+dist
+# ค่าลับของแต่ละเครื่อง ห้ามขึ้น GitHub
+.env
+.env.local
+# ไฟล์ระบบ / editor
+.DS_Store
+*.log
+.vscode/*
+!.vscode/extensions.json

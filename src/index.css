@@ -1,0 +1,7 @@
+@import "tailwindcss";
+
+/* สีหลักของโปรเจกต์ — แก้ให้ตรงกับ Figma ได้ที่นี่ แล้วใช้ใน class เช่น bg-primary, text-primary */
+@theme {
+  --color-primary: #06c755;
+  --font-sans: "Noto Sans Thai", ui-sans-serif, system-ui, sans-serif;
+}
