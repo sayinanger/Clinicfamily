@@ -92,7 +92,8 @@ export default function AdminAppointments() {
   // ปุ่มในคอลัมน์ "จัดการ" ของแต่ละแถว
   function renderAction(item) {
     const busy = busyId === item.appointmentId
-    const buttonBase = 'h-7 rounded-md border bg-white px-3.5 text-sm font-medium'
+        // ทุกปุ่มกว้าง 64px เท่ากัน (เท่าปุ่ม [แก้คืน] ใน Figma)
+    const buttonBase = 'h-7 w-16 rounded-md border bg-white text-sm'
 
     // ยืนยันแล้ว → ปุ่ม [ไม่มา] (ถึงเวลานัด = กรอบแดงกดได้, ยังไม่ถึง = สีเทากดไม่ได้)
     if (item.status === 'booked') {
@@ -133,7 +134,7 @@ export default function AdminAppointments() {
     }
 
     // ยกเลิก → ขีด "—" (ไม่มีปุ่ม)
-    return <span className="inline-block w-[60px] text-center text-staff-disabled">—</span>
+    return <span className="inline-block w-16 text-center text-staff-disabled">—</span>
   }
 
   return (
@@ -142,7 +143,7 @@ export default function AdminAppointments() {
       <h1 className="text-2xl leading-7 font-bold text-black">ดูรายการนัดหมาย</h1>
 
       {/* แถวเลือกวันที่ */}
-      <div className="mt-3 flex items-center gap-6">
+      <div className="mt-2 flex items-center gap-6">
         <span className="text-xl font-medium text-black">วันที่</span>
         {/* กล่องหน้าตาตาม Figma + ช่องวันที่จริง (โปร่งใส) วางทับอยู่ด้านบน
             กดตรงไหนของกล่องก็เท่ากับกดช่องวันที่จริง → ปฏิทินของเบราว์เซอร์เด้งขึ้นมา */}
@@ -170,8 +171,8 @@ export default function AdminAppointments() {
       {errorMessage && <p className="mt-3 text-sm text-staff-red">{errorMessage}</p>}
 
       {/* ตารางรายการนัด */}
-      <div className="mt-4 overflow-hidden rounded-xl border border-staff-table-border bg-white">
-        <table className="w-full table-fixed text-left text-[15px] font-medium text-black">
+      <div className="mt-3 overflow-hidden rounded-xl border border-staff-table-border bg-white">
+        <table className="w-full table-fixed text-left text-[15px] text-black">
           {/* ความกว้างแต่ละคอลัมน์ (สัดส่วนตาม Figma) */}
           <colgroup>
             <col className="w-[11.7%]" />
@@ -195,20 +196,20 @@ export default function AdminAppointments() {
           </thead>
           <tbody className="divide-y divide-staff-border">
             {loading ? (
-              <tr className="h-9">
+              <tr className="h-10">
                 <td colSpan={7} className="text-center text-staff-subtle">
                   กำลังโหลด...
                 </td>
               </tr>
             ) : appointments.length === 0 ? (
-              <tr className="h-9">
+              <tr className="h-10">
                 <td colSpan={7} className="text-center text-staff-subtle">
                   ไม่มีนัดหมายในวันนี้
                 </td>
               </tr>
             ) : (
               appointments.map((item, index) => (
-                <tr key={item.appointmentId} className="h-9">
+                <tr key={item.appointmentId} className="h-10">
                   <td className="text-center">{index + 1}</td>
                   <td className="truncate pl-9">
                     {item.firstName} {item.lastName}
@@ -216,7 +217,7 @@ export default function AdminAppointments() {
                   <td>{item.phone}</td>
                   <td>{formatThaiDateShort(item.date)}</td>
                   <td>{item.startTime}</td>
-                  <td className={statusLabels[item.status]?.color}>{statusLabels[item.status]?.text}</td>
+                  <td className={`font-medium ${statusLabels[item.status]?.color}`}>{statusLabels[item.status]?.text}</td>
                   <td>{renderAction(item)}</td>
                 </tr>
               ))
