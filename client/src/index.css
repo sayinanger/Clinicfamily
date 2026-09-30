@@ -55,6 +55,12 @@
   --color-staff-undo: #404040;
   --color-staff-disabled: #CBCBCB;
 
+  /* ===== หน้าจัดการเวลา (Figma 255:203) ===== */
+  /* เขียว — ปุ่ม [เปิด] + จุดสถานะ "เปิดรับการจอง" */
+  --color-staff-open: #34A853;
+  /* แดง — จุดสถานะ "ปิดรับการจอง" (จุด "มีผู้จองแล้ว" = staff-blue, "กำลังถูกจอง" = staff-orange) */
+  --color-staff-closed-dot: #EA4335;
+
   /* ฟอนต์หลัก Sarabun (โหลดจาก Google Fonts ใน index.html) ถ้าโหลดไม่ได้จะใช้ฟอนต์ระบบแทน */
   --font-sans: "Sarabun", ui-sans-serif, system-ui, sans-serif;
 }

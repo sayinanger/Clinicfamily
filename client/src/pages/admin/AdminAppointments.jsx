@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { getAdminAppointments, markNoShow, undoNoShow } from '../../lib/api.js'
-import { formatThaiDateLong, formatThaiDateShort } from '../../lib/format.js'
-import iconCalendar from '../../assets/admin/icon-calendar.svg'
+import { formatThaiDateShort } from '../../lib/format.js'
+import DatePickerBox from '../../components/DatePickerBox.jsx'
 
 // หน้าดูรายการนัดหมาย — ตาม Figma "ดูรายการนัดหมาย (v2)" (255:52)
 // API ที่ใช้: S4 ดูรายการ, S5 กด [ไม่มา], S6 กด [แก้คืน] (ดู docs/api-contract.md)
@@ -27,8 +27,6 @@ export default function AdminAppointments() {
   const [busyId, setBusyId] = useState(null)
   // เวลาปัจจุบัน อัปเดตทุก 10 วินาที → ปุ่ม [แก้คืน] เปลี่ยนเป็นสีเทาเมื่อครบ 5 นาที
   const [now, setNow] = useState(Date.now())
-  // ใช้สั่งเปิดปฏิทินของเบราว์เซอร์ (ช่องวันที่จริงที่โปร่งใส)
-  const dateInputRef = useRef(null)
 
   // โหลดรายการนัด — selectedDate ว่าง = ให้ server เลือกวันเปิดทำการถัดไป
   async function loadAppointments(selectedDate) {
@@ -56,23 +54,6 @@ export default function AdminAppointments() {
     return () => clearInterval(timer)
   }, [])
 
-  // เลือกวันที่ใหม่จากปฏิทิน → โหลดรายการของวันนั้น
-  function handleDateChange(event) {
-    if (event.target.value) {
-      loadAppointments(event.target.value)
-    }
-  }
-
-  // กดกล่องวันที่ → สั่งเปิดปฏิทินของเบราว์เซอร์ (ถ้าเบราว์เซอร์ไม่รองรับคำสั่งนี้
-  // ก็ไม่เป็นไร เพราะช่องวันที่จริงวางทับกล่องอยู่ กดแล้วเบราว์เซอร์เปิดปฏิทินให้เอง)
-  function openCalendar() {
-    try {
-      dateInputRef.current.showPicker()
-    } catch {
-      // ไม่ต้องทำอะไร
-    }
-  }
-
   // กด [ไม่มา] หรือ [แก้คืน] — action = markNoShow หรือ undoNoShow
   async function handleAction(appointmentId, action) {
     setBusyId(appointmentId)
@@ -92,7 +73,7 @@ export default function AdminAppointments() {
   // ปุ่มในคอลัมน์ "จัดการ" ของแต่ละแถว
   function renderAction(item) {
     const busy = busyId === item.appointmentId
-        // ทุกปุ่มกว้าง 64px เท่ากัน (เท่าปุ่ม [แก้คืน] ใน Figma)
+    // ทุกปุ่มกว้าง 64px เท่ากัน (เท่าปุ่ม [แก้คืน] ใน Figma)
     const buttonBase = 'h-7 w-16 rounded-md border bg-white text-sm'
 
     // ยืนยันแล้ว → ปุ่ม [ไม่มา] (ถึงเวลานัด = กรอบแดงกดได้, ยังไม่ถึง = สีเทากดไม่ได้)
@@ -145,26 +126,9 @@ export default function AdminAppointments() {
       {/* แถวเลือกวันที่ */}
       <div className="mt-2 flex items-center gap-6">
         <span className="text-xl font-medium text-black">วันที่</span>
-        {/* กล่องหน้าตาตาม Figma + ช่องวันที่จริง (โปร่งใส) วางทับอยู่ด้านบน
-            กดตรงไหนของกล่องก็เท่ากับกดช่องวันที่จริง → ปฏิทินของเบราว์เซอร์เด้งขึ้นมา */}
-        <div className="relative h-[38px] w-[289px]">
-          {/* ส่วนที่มองเห็น */}
-          <div className="flex h-full w-full items-center justify-between rounded-[5px] border border-staff-subtle bg-white px-[15px] text-[15px] font-medium text-black">
-            {date ? formatThaiDateLong(date) : 'กำลังโหลด...'}
-            <img src={iconCalendar} alt="" className="size-3.5" />
-          </div>
-          {/* ช่องวันที่จริง: โปร่งใส (opacity-0) วางทับทั้งกล่อง
-              บรรทัด [&::-webkit-calendar-picker-indicator] = ขยายปุ่มปฏิทินของ Chrome ให้เต็มกล่อง */}
-          <input
-            ref={dateInputRef}
-            type="date"
-            value={date}
-            onChange={handleDateChange}
-            onClick={openCalendar}
-            aria-label="เลือกวันที่"
-            className="absolute inset-0 h-full w-full cursor-pointer opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:cursor-pointer"
-          />
-        </div>
+        {/* กล่องเลือกวันที่ (ไฟล์ components/DatePickerBox.jsx ใช้ร่วมกับหน้าจัดการเวลา)
+            เลือกวันใหม่ → โหลดรายการนัดของวันนั้น */}
+        <DatePickerBox value={date} onChange={loadAppointments} />
       </div>
 
       {/* ข้อความผิดพลาด (ไม่มีใน Figma) */}

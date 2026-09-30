@@ -53,6 +53,14 @@ function nextOpenDay() {
   return toDateString(day)
 }
 
+// วันสุดท้ายที่มีเวลาให้จอง = วันนี้ + 14 วัน (server จริงสร้างเวลาล่วงหน้าแค่นี้)
+// วันที่ไกลกว่านี้ → ยังไม่มีเวลา และยังไม่มีนัด
+function isBeyondBookingRange(dateString) {
+  const lastDay = new Date()
+  lastDay.setDate(lastDay.getDate() + 14)
+  return dateString > toDateString(lastDay) // เทียบข้อความ 'YYYY-MM-DD' ได้เลย
+}
+
 // เวลาหมดสิทธิ์แก้คืน = ตอนนี้ + 5 นาที ในรูปแบบ ISO เวลาไทย เช่น '2026-10-03T08:10:00+07:00'
 function fiveMinutesFromNowIso() {
   const bangkokMs = Date.now() + 5 * 60 * 1000 + 7 * 60 * 60 * 1000
@@ -102,8 +110,8 @@ function getAppointmentsOfDate(date) {
   if (!appointmentsByDate[date]) {
     let pattern = []
     if (date === nextOpenDay()) pattern = patternFull
-    else if (isOpenDay(date)) pattern = patternSix
-    // วันธรรมดา → pattern ว่าง = ไม่มีนัด
+    else if (isOpenDay(date) && !isBeyondBookingRange(date)) pattern = patternSix
+    // วันธรรมดา หรือไกลเกิน 14 วัน → pattern ว่าง = ไม่มีนัด
 
     appointmentsByDate[date] = pattern.map((rowStatus, index) => ({
       appointmentId: nextAppointmentId++,
@@ -126,6 +134,58 @@ function findAppointment(appointmentId) {
     if (found) return found
   }
   throw mockError(404, 'NOT_FOUND', 'ไม่พบนัดหมายนี้')
+}
+
+// ===== ข้อมูลเวลา (หน้า "จัดการเวลา") =====
+// ให้ตรงกับหน้ารายการนัด: คิวที่มีนัด (ยืนยันแล้ว/ไม่มา) → "มีผู้จองแล้ว"
+//                          คิวที่นัดถูกยกเลิก หรือไม่มีนัด → "เปิดรับการจอง"
+// วันเปิดอื่น ๆ (ไม่ใช่วันเปิดทำการถัดไป) เพิ่มตัวอย่าง "กำลังถูกจอง" / "ปิดรับการจอง"
+// ในคิวที่ไม่มีนัด เพื่อให้เห็นครบทุกสถานะ
+const exampleStatusWhenNoAppointment = { '08:30': 'held', '08:45': 'closed', '09:00': 'closed' }
+
+// เก็บเวลาที่สร้างแล้วของแต่ละวัน { 'YYYY-MM-DD': [slot, ...] } → กดปิด/เปิดแล้วจำค่าไว้
+const slotsByDate = {}
+let nextSlotId = 101
+
+// เวลาจบคิว = เวลาเริ่ม + 15 นาที เช่น '07:45' → '08:00'
+function addFifteenMinutes(startTime) {
+  const [hour, minute] = startTime.split(':').map(Number)
+  const total = hour * 60 + minute + 15
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+}
+
+// สร้างเวลาปลอมของวันที่ขอ (สร้างครั้งแรกครั้งเดียว ครั้งต่อไปใช้ของเดิม)
+function getSlotsOfDate(date) {
+  if (!slotsByDate[date]) {
+    if (!isOpenDay(date) || isBeyondBookingRange(date)) {
+      slotsByDate[date] = [] // วันธรรมดา หรือไกลเกิน 14 วัน → ไม่มีเวลา (ตาม contract)
+    } else {
+      const appointments = getAppointmentsOfDate(date) // นัดของวันเดียวกัน (ใช้ข้อมูลชุดเดียวกับหน้ารายการนัด)
+      const isNextOpenDay = date === nextOpenDay()
+      slotsByDate[date] = allStartTimes.map((startTime) => {
+        // มีนัดที่ยังไม่ยกเลิกในเวลานี้ไหม
+        const hasAppointment = appointments.some(
+          (item) => item.startTime === startTime && item.status !== 'cancelled',
+        )
+        let status = 'available'
+        if (hasAppointment) status = 'booked'
+        else if (!isNextOpenDay && exampleStatusWhenNoAppointment[startTime]) {
+          status = exampleStatusWhenNoAppointment[startTime]
+        }
+        return { slotId: nextSlotId++, startTime, endTime: addFifteenMinutes(startTime), status }
+      })
+    }
+  }
+  return slotsByDate[date]
+}
+
+// หาเวลาจาก id (ค้นทุกวันที่สร้างไว้แล้ว)
+function findSlot(slotId) {
+  for (const list of Object.values(slotsByDate)) {
+    const found = list.find((item) => item.slotId === Number(slotId))
+    if (found) return found
+  }
+  throw mockError(404, 'NOT_FOUND', 'ไม่พบเวลานี้')
 }
 
 // ===== รายการ API ที่มีข้อมูลปลอมแล้ว — เพิ่มทีละหน้า =====
@@ -213,6 +273,47 @@ const handlers = [
       appointment.canUndoNoShow = false
       appointment.undoNoShowUntil = null
       return appointment
+    },
+  },
+
+  // S7 — เวลาทั้งหมดของวันที่เลือก (ไม่ส่ง date → วันเปิดทำการถัดไป)
+  {
+    method: 'GET',
+    path: '/api/admin/slots',
+    handle({ query }) {
+      requireStaffLogin()
+      const date = query.date || nextOpenDay()
+      return { date, slots: getSlotsOfDate(date) }
+    },
+  },
+
+  // S8 — กด [ปิด] (ปิดได้เฉพาะเวลาที่ยังว่าง)
+  {
+    method: 'POST',
+    path: '/api/admin/slots/:id/close',
+    handle({ params }) {
+      requireStaffLogin()
+      const slot = findSlot(params.id)
+      if (slot.status !== 'available') {
+        throw mockError(409, 'SLOT_NOT_AVAILABLE', 'ปิดได้เฉพาะเวลาที่ยังว่าง')
+      }
+      slot.status = 'closed'
+      return slot
+    },
+  },
+
+  // S9 — กด [เปิด] (เปิดได้เฉพาะเวลาที่ถูกปิดอยู่)
+  {
+    method: 'POST',
+    path: '/api/admin/slots/:id/open',
+    handle({ params }) {
+      requireStaffLogin()
+      const slot = findSlot(params.id)
+      if (slot.status !== 'closed') {
+        throw mockError(409, 'SLOT_NOT_CLOSED', 'เวลานี้ไม่ได้ถูกปิดอยู่')
+      }
+      slot.status = 'available'
+      return slot
     },
   },
 ]

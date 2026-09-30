@@ -4,6 +4,7 @@ import AdminLayout from './layouts/AdminLayout.jsx'
 import LiffHome from './pages/liff/LiffHome.jsx'
 import AdminLogin from './pages/admin/AdminLogin.jsx'
 import AdminAppointments from './pages/admin/AdminAppointments.jsx'
+import AdminSlots from './pages/admin/AdminSlots.jsx'
 import AdminComingSoon from './pages/admin/AdminComingSoon.jsx'
 import NotFound from './pages/NotFound.jsx'
 
@@ -24,8 +25,8 @@ export default function App() {
       <Route path="/admin/login" element={<AdminLogin />} />
       <Route path="/admin" element={<AdminLayout />}>
         <Route index element={<AdminAppointments />} />
-        {/* หน้าชั่วคราว — ขั้น 5–6 จะเปลี่ยนเป็นหน้าจริง */}
-        <Route path="slots" element={<AdminComingSoon title="จัดการเวลา" />} />
+        <Route path="slots" element={<AdminSlots />} />
+        {/* หน้าชั่วคราว — ขั้น 6 จะเปลี่ยนเป็นหน้าจริง */}
         <Route path="stats" element={<AdminComingSoon title="สถิติ" />} />
       </Route>
 

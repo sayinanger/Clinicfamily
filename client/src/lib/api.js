@@ -81,3 +81,20 @@ export function markNoShow(appointmentId) {
 export function undoNoShow(appointmentId) {
   return apiRequest(`/api/admin/appointments/${appointmentId}/no-show`, { method: 'DELETE' })
 }
+
+// S7 — เวลาทั้งหมดของวันที่เลือก (12 คิว) สำหรับหน้าจัดการเวลา
+// date = 'YYYY-MM-DD' หรือไม่ส่ง (server เลือกวันเปิดทำการถัดไปให้)
+export function getAdminSlots(date) {
+  const query = date ? `?date=${date}` : ''
+  return apiRequest(`/api/admin/slots${query}`)
+}
+
+// S8 — กดปุ่ม [ปิด] (ปิดรับการจองเวลานี้ — ปิดได้เฉพาะเวลาที่ยังว่าง)
+export function closeSlot(slotId) {
+  return apiRequest(`/api/admin/slots/${slotId}/close`, { method: 'POST' })
+}
+
+// S9 — กดปุ่ม [เปิด] (เปิดรับการจองเวลาที่ถูกปิดไว้)
+export function openSlot(slotId) {
+  return apiRequest(`/api/admin/slots/${slotId}/open`, { method: 'POST' })
+}
