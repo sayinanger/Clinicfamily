@@ -137,6 +137,7 @@ Error: `400 VALIDATION_ERROR` "กรุณากรอกชื่อผู้�
 - `status`: `booked` (แสดง "ยืนยันแล้ว") · `no_show` ("ไม่มา") · `cancelled` ("ยกเลิก")
 - `canMarkNoShow` = `status` เป็น `booked` และถึงเวลานัดแล้ว → ปุ่ม [ไม่มา] กรอบแดง; ถ้า `false` และ `booked` → ปุ่ม [ไม่มา] สีเทา
 - `canUndoNoShow` = `status` เป็น `no_show` และยังไม่เกิน 5 นาทีหลังกด → ปุ่ม [แก้คืน]; `undoNoShowUntil` = เวลาหมดสิทธิ์แก้คืน
+- `no_show` ที่ `canUndoNoShow` เป็น `false` (เกิน 5 นาทีแล้ว) → ปุ่ม [แก้คืน] สีเทา กดไม่ได้
 - `cancelled` → แสดง "—"
 
 ### S5. POST `/api/admin/appointments/:id/no-show` — กด [ไม่มา]
@@ -145,7 +146,7 @@ Error: `409 NOT_YET_TIME` "ยังไม่ถึงเวลานัด" · 
 
 ### S6. DELETE `/api/admin/appointments/:id/no-show` — กด [แก้คืน]
 ได้ `200` = นัดตัวเดียว (status กลับเป็น `booked`)
-Error: `409 UNDO_EXPIRED` "เกิน 5 นาทีแล้ว แก้คืนไม่ได้" · `409 INVALID_STATUS`
+Error: `409 UNDO_EXPIRED` "เกิน 5 นาทีแล้ว แก้คืนไม่ได้" · `409 INVALID_STATUS` "นัดนี้ไม่อยู่ในสถานะไม่มา"
 
 ### S7. GET `/api/admin/slots?date=2026-10-03` — เวลาทั้งหมดของวัน (12 คิว)
 - ไม่ส่ง `date` → วันเปิดทำการถัดไป · วันที่ไม่ใช่เสาร์–อาทิตย์ → `slots: []`
