@@ -34,6 +34,27 @@
   /* แดง — ข้อความผิดพลาด, ปุ่ม [ไม่มา], สถานะยกเลิก */
   --color-staff-red: #DC2626;
 
+  /* ===== Staff Dashboard (Figma 255:52, 255:203, 259:64) ===== */
+  /* เมนูที่เลือกอยู่: ตัวหนังสือ/ไอคอนสีฟ้า + พื้นฟ้าจาง (Figma ใช้ฟ้า ไม่ใช่เขียว) */
+  --color-staff-blue: #2563EB;
+  --color-staff-blue-soft: #EBF2FF;
+  /* ตัวหนังสือเมนูปกติ + ปุ่มออกจากระบบ */
+  --color-staff-menu: #4B5563;
+  /* เส้นขอบบาง ๆ ของเมนูข้าง/แถบบน */
+  --color-staff-line: #F3F4F6;
+  /* ชื่อ "Staff User" มุมขวาบน + วงกลมรูปคน */
+  --color-staff-name: #374151;
+  --color-staff-avatar: #E5E7EB;
+  /* ตาราง: ขอบกรอบ, พื้นหัวตาราง (เส้นคั่นแถวใช้ staff-border) */
+  --color-staff-table-border: #E5E5E5;
+  --color-staff-table-head: #EFEFEF;
+  /* สถานะนัด: ยืนยันแล้ว = เขียว, ไม่มา = ส้ม (ยกเลิก = staff-red) */
+  --color-staff-ok: #579B5E;
+  --color-staff-orange: #EA8116;
+  /* ปุ่ม [แก้คืน] และปุ่มที่กดไม่ได้ / เครื่องหมาย — */
+  --color-staff-undo: #404040;
+  --color-staff-disabled: #CBCBCB;
+
   /* ฟอนต์หลัก Sarabun (โหลดจาก Google Fonts ใน index.html) ถ้าโหลดไม่ได้จะใช้ฟอนต์ระบบแทน */
   --font-sans: "Sarabun", ui-sans-serif, system-ui, sans-serif;
 }

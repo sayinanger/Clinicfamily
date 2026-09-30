@@ -54,3 +54,30 @@ export async function apiRequest(path, { method = 'GET', body } = {}) {
 export function adminLogin(username, password) {
   return apiRequest('/api/admin/login', { method: 'POST', body: { username, password } })
 }
+
+// S2 — staff ออกจากระบบ
+export function adminLogout() {
+  return apiRequest('/api/admin/logout', { method: 'POST' })
+}
+
+// S3 — ดูว่า staff login อยู่ไหม (ถ้ายังไม่ login จะ throw error ที่ .status = 401)
+export function getAdminMe() {
+  return apiRequest('/api/admin/me')
+}
+
+// S4 — รายการนัดของวันที่เลือก
+// date = 'YYYY-MM-DD' หรือไม่ส่ง (server เลือกวันเปิดทำการถัดไปให้)
+export function getAdminAppointments(date) {
+  const query = date ? `?date=${date}` : ''
+  return apiRequest(`/api/admin/appointments${query}`)
+}
+
+// S5 — กดปุ่ม [ไม่มา]
+export function markNoShow(appointmentId) {
+  return apiRequest(`/api/admin/appointments/${appointmentId}/no-show`, { method: 'POST' })
+}
+
+// S6 — กดปุ่ม [แก้คืน] (ยกเลิกการกด "ไม่มา" ภายใน 5 นาที)
+export function undoNoShow(appointmentId) {
+  return apiRequest(`/api/admin/appointments/${appointmentId}/no-show`, { method: 'DELETE' })
+}
