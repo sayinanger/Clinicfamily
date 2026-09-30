@@ -49,3 +49,8 @@ export async function apiRequest(path, { method = 'GET', body } = {}) {
 
 // ===== ฟังก์ชันของแต่ละ API =====
 // จะเพิ่มทีละหน้า (ขั้น 3 เป็นต้นไป) ชื่อตรงกับตารางใน docs/api-contract.md
+
+// S1 — staff เข้าสู่ระบบ
+export function adminLogin(username, password) {
+  return apiRequest('/api/admin/login', { method: 'POST', body: { username, password } })
+}

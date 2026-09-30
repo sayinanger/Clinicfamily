@@ -7,19 +7,48 @@
 // หน่วงเวลาให้เหมือนเรียก server จริง (มิลลิวินาที)
 const MOCK_DELAY_MS = 300
 
-// รายการ API ที่มีข้อมูลปลอมแล้ว — เพิ่มทีละหน้า
+// ===== ข้อมูลเริ่มต้น =====
+
+// บัญชี staff (ระบบมี 1 บัญชี) — ใช้ login ในโหมดข้อมูลปลอม: staff / 1234
+const mockStaff = { staffId: 1, name: 'Staff User', username: 'staff', password: '1234' }
+
+// staff ที่ login อยู่ (แทน session cookie ของ server จริง) — null = ยังไม่ login
+// จำไว้ใน sessionStorage ของเบราว์เซอร์ → กดรีเฟรชแล้วยัง login อยู่ จนกว่าจะปิดแท็บ
+let loggedInStaff = JSON.parse(sessionStorage.getItem('mockLoggedInStaff') || 'null')
+function saveLoggedInStaff(staff) {
+  loggedInStaff = staff
+  sessionStorage.setItem('mockLoggedInStaff', JSON.stringify(staff))
+}
+
+// ===== รายการ API ที่มีข้อมูลปลอมแล้ว — เพิ่มทีละหน้า =====
 // แต่ละรายการ: { method, path, handle }
 //   path ใส่ตัวแปรได้ เช่น '/api/admin/slots/:id/close' → params.id
 //   handle({ body, params, query }) คืนข้อมูลตอบกลับ หรือ throw mockError(...)
-const handlers = []
+const handlers = [
+  // S1 — staff เข้าสู่ระบบ
+  {
+    method: 'POST',
+    path: '/api/admin/login',
+    handle({ body }) {
+      if (!body?.username || !body?.password) {
+        throw mockError(400, 'VALIDATION_ERROR', 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน')
+      }
+      if (body.username !== mockStaff.username || body.password !== mockStaff.password) {
+        throw mockError(401, 'INVALID_LOGIN', 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง')
+      }
+      saveLoggedInStaff({ staffId: mockStaff.staffId, name: mockStaff.name })
+      return { staff: loggedInStaff }
+    },
+  },
+]
 
 // สร้าง error แบบเดียวกับที่ server จริงจะตอบ
 export function mockError(status, code, message, extra = {}) {
-        const error = new Error(message)
-        error.code = code
-        error.status = status
-        error.data = { code, message, ...extra }
-    return error
+  const error = new Error(message)
+  error.code = code
+  error.status = status
+  error.data = { code, message, ...extra }
+  return error
 }
 
 // เทียบ path จริงกับแบบ เช่น '/api/admin/slots/5/close' กับ '/api/admin/slots/:id/close'

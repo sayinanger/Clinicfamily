@@ -17,6 +17,23 @@
   /* เทา — ข้อความรอง/คำอธิบาย ใช้เป็น text-muted */
   --color-muted: #868686;
 
+  /* ===== ฝั่ง Staff (Web Admin) ===== */
+  /* เขียวเข้มปุ่ม Login + ไอคอนโลโก้ (หน้า login ใช้เฉดนี้ ไม่ใช่ primary) */
+  --color-staff-green: #133D1A;
+  /* พื้นวงกลมโลโก้ */
+  --color-staff-logo-bg: #CFEBBC;
+  /* พื้นการ์ด login / พื้นหน้า dashboard */
+  --color-staff-card: #F8FAFC;
+  /* ช่องกรอก: พื้น, ขอบ, ไอคอน */
+  --color-staff-input: #F3F3F4;
+  --color-staff-border: #C2C9BD;
+  --color-staff-icon: #72796F;
+  /* ตัวหนังสือ: หัวช่องกรอก, ข้อความรอง/placeholder */
+  --color-staff-label: #1A1C1C;
+  --color-staff-subtle: #6B7280;
+  /* แดง — ข้อความผิดพลาด, ปุ่ม [ไม่มา], สถานะยกเลิก */
+  --color-staff-red: #DC2626;
+
   /* ฟอนต์หลัก Sarabun (โหลดจาก Google Fonts ใน index.html) ถ้าโหลดไม่ได้จะใช้ฟอนต์ระบบแทน */
   --font-sans: "Sarabun", ui-sans-serif, system-ui, sans-serif;
 }
