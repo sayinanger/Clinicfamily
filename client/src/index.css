@@ -1,7 +1,22 @@
 @import "tailwindcss";
 
-/* สีหลักของโปรเจกต์ — แก้ให้ตรงกับ Figma ได้ที่นี่ แล้วใช้ใน class เช่น bg-primary, text-primary */
+/*
+  ค่าสีและฟอนต์กลางของทั้งโปรเจกต์ (ตาม Figma)
+  - ตั้งชื่อ --color-xxx แล้ว Tailwind จะสร้าง class ให้อัตโนมัติ
+    เช่น --color-primary → ใช้ได้เป็น bg-primary, text-primary, border-primary
+  - ถ้า Figma เปลี่ยนสี ให้แก้ที่ไฟล์นี้ที่เดียว ทุกหน้าจะเปลี่ยนตาม
+  - ค่าสีดึงจาก Figma จริง (ตรวจ 2026-09-30); สีเฉพาะหน้าอื่น ๆ จะเพิ่มตอนทำหน้านั้น
+*/
 @theme {
-  --color-primary: #06c755;
-  --font-sans: "Noto Sans Thai", ui-sans-serif, system-ui, sans-serif;
+  /* เขียวเข้ม — ปุ่ม, หัวตาราง, ตัวหนังสือหลัก ฝั่งผู้ป่วย (LIFF) */
+  --color-primary: #2B552F;
+  /* เขียวอ่อน — ใช้เป็น bg-primary-light, border-primary-light */
+  --color-primary-light: #BAD5A8;
+  /* พื้นเขียวจาง — พื้นหลังหน้า/การ์ด ใช้เป็น bg-primary-soft */
+  --color-primary-soft: #EFF4EB;
+  /* เทา — ข้อความรอง/คำอธิบาย ใช้เป็น text-muted */
+  --color-muted: #868686;
+
+  /* ฟอนต์หลัก Sarabun (โหลดจาก Google Fonts ใน index.html) ถ้าโหลดไม่ได้จะใช้ฟอนต์ระบบแทน */
+  --font-sans: "Sarabun", ui-sans-serif, system-ui, sans-serif;
 }
