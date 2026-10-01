@@ -23,4 +23,29 @@ export function formatThaiDateShort(dateString) {
     month: 'short',
     year: 'numeric',
   })
+
+}
+
+//---------------หน้าสถิติ---------------
+
+// แปลงข้อความเดือน 'YYYY-MM' เป็น Date (วันที่ 1 ของเดือนนั้น)
+function monthToDateObject(monthString) {
+  const [year, month] = monthString.split('-').map(Number)
+  return new Date(year, month - 1, 1)
+}
+
+// '2026-05' → 'พฤษภาคม 2569' (ใช้ในช่องเลือกเดือน หน้าสถิติ)
+export function formatThaiMonthLong(monthString) {
+  return monthToDateObject(monthString).toLocaleDateString('th-TH', {
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+// '2026-05' → 'พ.ค. 69' (ใช้ใต้แท่งกราฟ หน้าสถิติ)
+export function formatThaiMonthShort(monthString) {
+  return monthToDateObject(monthString).toLocaleDateString('th-TH', {
+    month: 'short',
+    year: '2-digit',
+  })
 }

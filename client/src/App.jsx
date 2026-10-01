@@ -5,7 +5,7 @@ import LiffHome from './pages/liff/LiffHome.jsx'
 import AdminLogin from './pages/admin/AdminLogin.jsx'
 import AdminAppointments from './pages/admin/AdminAppointments.jsx'
 import AdminSlots from './pages/admin/AdminSlots.jsx'
-import AdminComingSoon from './pages/admin/AdminComingSoon.jsx'
+import AdminStats from './pages/admin/AdminStats.jsx'
 import NotFound from './pages/NotFound.jsx'
 
 // กำหนดเส้นทาง (route) ทั้งหมดของแอป
@@ -26,8 +26,7 @@ export default function App() {
       <Route path="/admin" element={<AdminLayout />}>
         <Route index element={<AdminAppointments />} />
         <Route path="slots" element={<AdminSlots />} />
-        {/* หน้าชั่วคราว — ขั้น 6 จะเปลี่ยนเป็นหน้าจริง */}
-        <Route path="stats" element={<AdminComingSoon title="สถิติ" />} />
+        <Route path="stats" element={<AdminStats />} />
       </Route>
 
       <Route path="*" element={<NotFound />} />

@@ -98,3 +98,15 @@ export function closeSlot(slotId) {
 export function openSlot(slotId) {
   return apiRequest(`/api/admin/slots/${slotId}/open`, { method: 'POST' })
 }
+
+// S10 — สถิติรายเดือน (หน้าสถิติ)
+// month = 'YYYY-MM' หรือไม่ส่ง (server ใช้เดือนปัจจุบัน)
+export function getAdminStats(month) {
+  const query = month ? `?month=${month}` : ''
+  return apiRequest(`/api/admin/stats${query}`)
+}
+
+// S11 — อัตราไม่มาย้อนหลัง (กราฟในหน้าสถิติ) เรียงจากเดือนเก่าไปใหม่ เดือนสุดท้าย = เดือนปัจจุบัน
+export function getAdminStatsTrend(months = 6) {
+  return apiRequest(`/api/admin/stats/trend?months=${months}`)
+}

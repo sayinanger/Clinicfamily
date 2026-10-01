@@ -317,6 +317,117 @@ const handlers = [
     },
   },
 ]
+// ===== ข้อมูลสถิติ (หน้า "สถิติ") — S10, S11 =====
+// ตัวเลขคงที่ (ไม่ได้นับจากนัดปลอมของหน้ารายการนัด) ตั้งให้สมจริง:
+// - 5 เดือนที่ผ่านมา: เต็มเดือน อัตราไม่มาลดลงเรื่อย ๆ (12.5% → 7.2%) แบบตัวอย่างใน Figma
+//   (นัดรวมไม่เกิน 96 = 8 วันทำการ × 12 คิว เพราะบางเดือนมีเสาร์–อาทิตย์แค่ 8 วัน)
+// - เดือนปัจจุบัน: เพิ่งเริ่ม → นัดส่วนใหญ่ยังไม่ถึงเวลา (นับใน total อย่างเดียว)
+// - เดือนที่เก่ากว่านั้น: ยังไม่มีข้อมูล (ระบบยังไม่เปิดใช้) → ทุกค่าเป็น 0 และอัตราเป็น null ("—")
+// key = จำนวนเดือนย้อนหลังจากเดือนปัจจุบัน (0 = เดือนนี้, 1 = เดือนก่อน, ...)
+const statsByMonthsAgo = {
+  0: { total: 40, attended: 15, noShow: 1, cancelled: 4 }, // อีก 20 นัดยังไม่ถึงเวลา
+  1: { total: 90, attended: 77, noShow: 6, cancelled: 7 },
+  2: { total: 95, attended: 79, noShow: 7, cancelled: 9 },
+  3: { total: 91, attended: 77, noShow: 8, cancelled: 6 },
+  4: { total: 90, attended: 74, noShow: 9, cancelled: 7 },
+  5: { total: 96, attended: 77, noShow: 11, cancelled: 8 },
+}
+// ค่าอ้างอิงจากงานวิจัย (%)
+const REFERENCE_RATE = 22.0
+
+// เดือนที่ย้อนหลังไป monthsAgo เดือน → 'YYYY-MM' เช่น 0 = '2026-10', 1 = '2026-09'
+function monthKey(monthsAgo) {
+  const day = new Date()
+  day.setDate(1) // ตั้งเป็นวันที่ 1 ก่อน กันเดือนเพี้ยน (เช่น 31 ต.ค. ย้อน 1 เดือน)
+  day.setMonth(day.getMonth() - monthsAgo)
+  return toDateString(day).slice(0, 7)
+}
+
+// 'YYYY-MM' ย้อนหลังจากเดือนปัจจุบันกี่เดือน (เดือนในอนาคตจะติดลบ)
+function monthsAgoOf(month) {
+  const [year, monthNumber] = month.split('-').map(Number)
+  const today = new Date()
+  return (today.getFullYear() - year) * 12 + (today.getMonth() + 1 - monthNumber)
+}
+
+// จำนวนวันเปิดทำการ (เสาร์–อาทิตย์) ในเดือนนั้น
+function countOpenDays(month) {
+  const [year, monthNumber] = month.split('-').map(Number)
+  const day = new Date(year, monthNumber - 1, 1)
+  let count = 0
+  while (day.getMonth() === monthNumber - 1) {
+    if (isOpenDay(toDateString(day))) count++
+    day.setDate(day.getDate() + 1)
+  }
+  return count
+}
+
+// ปัดทศนิยม 1 ตำแหน่ง เช่น 6.25 → 6.3
+function roundOneDecimal(value) {
+  return Math.round(value * 10) / 10
+}
+
+// อัตราไม่มา = ไม่มา ÷ (มาตามนัด + ไม่มา) × 100 — ตัวหารเป็น 0 → null
+function calculateNoShowRate(counts) {
+  const divider = counts.attended + counts.noShow
+  if (divider === 0) return null
+  return roundOneDecimal((counts.noShow / divider) * 100)
+}
+
+// สถิติของเดือนเดียว (หน้าตาตาม contract S10)
+function buildMonthStats(month) {
+  const monthsAgo = monthsAgoOf(month)
+  const counts = statsByMonthsAgo[monthsAgo] || { total: 0, attended: 0, noShow: 0, cancelled: 0 }
+  // เดือนที่ไม่มีข้อมูล = ระบบยังไม่สร้างเวลา → 0 วันทำการ
+  const workingDays = statsByMonthsAgo[monthsAgo] ? countOpenDays(month) : 0
+
+  const prevMonth = monthKey(monthsAgo + 1)
+  const prevCounts = statsByMonthsAgo[monthsAgo + 1] || { attended: 0, noShow: 0 }
+  const noShowRate = calculateNoShowRate(counts)
+  const prevNoShowRate = calculateNoShowRate(prevCounts)
+
+  return {
+    month,
+    workingDays,
+    totalSlots: workingDays * 12,
+    ...counts,
+    noShowRate,
+    prevMonth,
+    prevNoShowRate,
+    // ต่างจากเดือนก่อนกี่ "จุด" — ค่าใดเป็น null → null
+    diffPoints: noShowRate === null || prevNoShowRate === null ? null : roundOneDecimal(noShowRate - prevNoShowRate),
+    referenceRate: REFERENCE_RATE,
+  }
+}
+
+// เพิ่ม API 2 ตัวเข้าไปในรายการ handlers ที่อยู่ข้างบน
+handlers.push(
+  // S10 — สถิติรายเดือน (ไม่ส่ง month → เดือนปัจจุบัน)
+  {
+    method: 'GET',
+    path: '/api/admin/stats',
+    handle({ query }) {
+      requireStaffLogin()
+      return buildMonthStats(query.month || monthKey(0))
+    },
+  },
+
+  // S11 — อัตราไม่มาย้อนหลัง (เรียงจากเก่าไปใหม่ เดือนสุดท้าย = เดือนปัจจุบัน)
+  {
+    method: 'GET',
+    path: '/api/admin/stats/trend',
+    handle({ query }) {
+      requireStaffLogin()
+      const count = Number(query.months) || 6
+      const months = []
+      for (let monthsAgo = count - 1; monthsAgo >= 0; monthsAgo--) {
+        const month = monthKey(monthsAgo)
+        months.push({ month, noShowRate: buildMonthStats(month).noShowRate })
+      }
+      return { referenceRate: REFERENCE_RATE, months }
+    },
+  },
+)
 
 // สร้าง error แบบเดียวกับที่ server จริงจะตอบ
 export function mockError(status, code, message, extra = {}) {

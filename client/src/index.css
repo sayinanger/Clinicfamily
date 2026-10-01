@@ -61,6 +61,12 @@
   /* แดง — จุดสถานะ "ปิดรับการจอง" (จุด "มีผู้จองแล้ว" = staff-blue, "กำลังถูกจอง" = staff-orange) */
   --color-staff-closed-dot: #EA4335;
 
+    /* ===== หน้าสถิติ (Figma 259:64) ===== */
+  /* ตัวเลขใหญ่ในการ์ด + หัวข้อการ์ด */
+  --color-staff-number: #121212;
+  /* คำอธิบายในการ์ด (เช่น "นัดทั้งหมด", "85.6% ของนัดทั้งหมด") */
+  --color-staff-stat-label: #6B7380;
+  
   /* ฟอนต์หลัก Sarabun (โหลดจาก Google Fonts ใน index.html) ถ้าโหลดไม่ได้จะใช้ฟอนต์ระบบแทน */
   --font-sans: "Sarabun", ui-sans-serif, system-ui, sans-serif;
 }
