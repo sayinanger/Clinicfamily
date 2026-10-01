@@ -110,3 +110,23 @@ export function getAdminStats(month) {
 export function getAdminStatsTrend(months = 6) {
   return apiRequest(`/api/admin/stats/trend?months=${months}`)
 }
+
+
+// ===== API ฝั่งผู้ป่วย (LIFF) =====
+
+// U1 — ข้อมูลของฉัน: ยินยอม PDPA แล้วหรือยัง, กรอกประวัติแล้วหรือยัง, ประวัติ
+export function getMe() {
+  return apiRequest('/api/me')
+}
+
+// U2 — กดยินยอม PDPA
+export function acceptPdpa() {
+  return apiRequest('/api/me/pdpa', { method: 'POST' })
+}
+
+// U3 — บันทึกประวัติ (กรอกครั้งแรกและแก้ไขใช้ตัวเดียวกัน)
+// profile = { firstName, lastName, gender, birthDate: 'YYYY-MM-DD', phone }
+// กรอกผิด → throw error ที่ .data.fields = { ชื่อช่อง: 'ข้อความผิด' }
+export function saveProfile(profile) {
+  return apiRequest('/api/me/profile', { method: 'PUT', body: profile })
+}

@@ -475,3 +475,169 @@ export async function mockRequest(method, fullPath, body) {
 
   throw mockError(404, 'NOT_FOUND', `ยังไม่มีข้อมูลจำลองของ ${method} ${path}`)
 }
+
+
+// ======================================================================
+// ===== ผู้ป่วยจำลอง (หน้า LIFF) — ขั้น 7 =====
+// ======================================================================
+// ตอนใช้ข้อมูลปลอม ไม่มี LINE จริง → สมมติว่ามีผู้ป่วย 1 คนเปิดหน้าอยู่
+// เลือก "สถานการณ์" ได้ด้วยการเติม ?user=... ท้าย URL เช่น /liff?user=new
+// สิ่งที่ทำ (กดยินยอม, บันทึกประวัติ) จำไว้ใน sessionStorage → รีเฟรชแล้วยังอยู่ จนกว่าจะปิดแท็บ
+
+// ประวัติตัวอย่าง (คนสมมติ — ไม่ใช่คนจริง)
+const sampleProfile = {
+  firstName: 'อรุณี',
+  lastName: 'ทดสอบดี',
+  gender: 'female',
+  birthDate: '1968-04-12',
+  phone: '0891110099',
+}
+
+// สถานการณ์ที่เลือกได้ (key = ค่าที่ใส่ใน ?user=)
+export const MOCK_PATIENT_SCENARIOS = {
+  new: { label: 'คนใหม่ (ยังไม่ยินยอม PDPA)', pdpaAccepted: false, profile: null },
+  pdpa: { label: 'ยินยอมแล้ว แต่ยังไม่กรอกประวัติ', pdpaAccepted: true, profile: null },
+  profile: { label: 'ยินยอมแล้ว + มีประวัติแล้ว', pdpaAccepted: true, profile: sampleProfile },
+}
+
+// ผู้ป่วยที่กำลังเปิดหน้าอยู่ (อ่านจาก sessionStorage ถ้ามี)
+let mockPatient = JSON.parse(sessionStorage.getItem('mockPatient') || 'null')
+function saveMockPatient() {
+  sessionStorage.setItem('mockPatient', JSON.stringify(mockPatient))
+}
+
+// สร้างผู้ป่วยใหม่ตามสถานการณ์ที่เลือก
+function resetMockPatient(scenarioKey) {
+  const scenario = MOCK_PATIENT_SCENARIOS[scenarioKey]
+  mockPatient = {
+    scenario: scenarioKey,
+    lineUserId: 'Umock000000000000000000000000001', // หน้าตาเหมือน userId ของ LINE
+    displayName: 'ผู้ใช้ทดสอบ',
+    pdpaAcceptedAt: scenario.pdpaAccepted ? '2026-10-01T09:00:00+07:00' : null,
+    profile: scenario.profile ? { ...scenario.profile } : null,
+  }
+  saveMockPatient()
+}
+
+// liff.js เรียกตอนเริ่มหน้า LIFF (แทน LINE จริง)
+// scenarioKey = ค่าจาก ?user= ใน URL (ไม่มีก็ได้)
+// - มี ?user= ที่ถูกต้อง → เริ่มใหม่ตามสถานการณ์นั้น
+// - ไม่มี → ใช้คนเดิมที่จำไว้ (ถ้ายังไม่มีเลย เริ่มเป็น "คนใหม่")
+export function startMockPatient(scenarioKey) {
+  if (MOCK_PATIENT_SCENARIOS[scenarioKey]) {
+    resetMockPatient(scenarioKey)
+  } else if (!mockPatient) {
+    resetMockPatient('new')
+  }
+  return {
+    lineUserId: mockPatient.lineUserId,
+    displayName: mockPatient.displayName,
+    pictureUrl: null,
+  }
+}
+
+// สถานการณ์ที่ใช้อยู่ตอนนี้ (หน้าเมนูทดสอบใช้แสดง)
+export function getMockPatientScenario() {
+  return mockPatient?.scenario || null
+}
+
+// คำนวณอายุ (ปีเต็ม) จากวันเกิด 'YYYY-MM-DD' — server จริงคำนวณเอง
+function calculateAge(birthDate) {
+  const [year, month, day] = birthDate.split('-').map(Number)
+  const today = new Date()
+  let age = today.getFullYear() - year
+  // ปีนี้ยังไม่ถึงวันเกิด → ลบออก 1
+  const beforeBirthday = today.getMonth() + 1 < month || (today.getMonth() + 1 === month && today.getDate() < day)
+  if (beforeBirthday) age -= 1
+  return age
+}
+
+// ประวัติในรูปแบบที่ API ตอบ (เพิ่ม age)
+function profileWithAge(profile) {
+  if (!profile) return null
+  return { ...profile, age: calculateAge(profile.birthDate) }
+}
+
+// API ที่ต้องยินยอม PDPA ก่อน — ยังไม่ยินยอม → 403 เหมือน server จริง
+function requirePatientPdpa() {
+  if (!mockPatient?.pdpaAcceptedAt) {
+    throw mockError(403, 'PDPA_REQUIRED', 'กรุณายินยอมการใช้ข้อมูลส่วนบุคคลก่อนใช้งาน')
+  }
+}
+
+// ตรวจข้อมูลประวัติ (U3) — ข้อยกเว้น: mock เช็กแทน server เพื่อให้เห็นข้อความแดงใต้ช่อง
+// คืนค่า { ชื่อช่อง: 'ข้อความผิด' } ถ้าไม่มีช่องผิดจะได้ {}
+function validateProfile(body) {
+  const fields = {}
+  if (!body?.firstName?.trim()) fields.firstName = 'กรุณากรอกชื่อ'
+  if (!body?.lastName?.trim()) fields.lastName = 'กรุณากรอกนามสกุล'
+  if (!['male', 'female', 'unspecified'].includes(body?.gender)) fields.gender = 'กรุณาเลือกเพศ'
+
+  if (!body?.birthDate) {
+    fields.birthDate = 'กรุณาเลือกวันเกิด'
+  } else if (body.birthDate > toDateString(new Date())) {
+    // เทียบข้อความ 'YYYY-MM-DD' ได้เลย
+    fields.birthDate = 'วันเกิดต้องไม่เป็นวันในอนาคต'
+  }
+
+  if (!body?.phone) {
+    fields.phone = 'กรุณากรอกเบอร์โทรศัพท์'
+  } else if (!/^0\d{9}$/.test(body.phone)) {
+    // ต้องเป็นตัวเลข 10 หลัก ขึ้นต้นด้วย 0
+    fields.phone = 'เบอร์โทรต้องเป็นตัวเลข 10 หลัก'
+  }
+  return fields
+}
+
+handlers.push(
+  // U1 — ข้อมูลของฉัน (ไม่เช็ก PDPA)
+  {
+    method: 'GET',
+    path: '/api/me',
+    handle() {
+      return {
+        lineDisplayName: mockPatient.displayName,
+        pdpaAccepted: Boolean(mockPatient.pdpaAcceptedAt),
+        profileCompleted: Boolean(mockPatient.profile),
+        profile: profileWithAge(mockPatient.profile),
+      }
+    },
+  },
+
+  // U2 — กดยินยอม PDPA (ไม่เช็ก PDPA — ไม่งั้นคนใหม่กดไม่ได้)
+  {
+    method: 'POST',
+    path: '/api/me/pdpa',
+    handle() {
+      if (!mockPatient.pdpaAcceptedAt) {
+        // เวลาตอนนี้ในรูปแบบ ISO เวลาไทย เช่น '2026-10-01T09:00:00+07:00' (ตาม contract)
+        const bangkokMs = Date.now() + 7 * 60 * 60 * 1000
+        mockPatient.pdpaAcceptedAt = new Date(bangkokMs).toISOString().slice(0, 19) + '+07:00'
+        saveMockPatient()
+      }
+      return { pdpaAcceptedAt: mockPatient.pdpaAcceptedAt }
+    },
+  },
+
+  // U3 — บันทึกประวัติ (ใช้ทั้งกรอกครั้งแรกและแก้ไข)
+  {
+    method: 'PUT',
+    path: '/api/me/profile',
+    handle({ body }) {
+      requirePatientPdpa()
+      const fields = validateProfile(body)
+      if (Object.keys(fields).length > 0) {
+        throw mockError(400, 'VALIDATION_ERROR', 'กรุณากรอกข้อมูลให้ครบถ้วน', { fields })
+      }
+      mockPatient.profile = {
+        firstName: body.firstName.trim(),
+        lastName: body.lastName.trim(),
+        gender: body.gender,
+        birthDate: body.birthDate,
+        phone: body.phone,
+      }
+      saveMockPatient()
+      return { profile: profileWithAge(mockPatient.profile) }
+    },
+  },
+)

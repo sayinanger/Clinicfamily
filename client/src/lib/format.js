@@ -49,3 +49,18 @@ export function formatThaiMonthShort(monthString) {
     year: '2-digit',
   })
 }
+
+
+//---------------หน้าผู้ป่วย (LIFF)---------------
+
+// '0845969924' → '084-596-9924' (เบอร์ 10 หลัก) — ถ้าไม่ใช่ 10 หลัก คืนค่าเดิม
+export function formatPhone(phone) {
+  if (!/^\d{10}$/.test(phone)) return phone
+  return `${phone.slice(0, 3)}-${phone.slice(3, 6)}-${phone.slice(6)}`
+}
+
+// ชื่อเดือนภาษาไทย (ลำดับที่ 0 = มกราคม) — ใช้ในช่องเลือกวันเกิด
+export const THAI_MONTHS = [
+  'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
+]

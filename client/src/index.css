@@ -66,6 +66,20 @@
   --color-staff-number: #121212;
   /* คำอธิบายในการ์ด (เช่น "นัดทั้งหมด", "85.6% ของนัดทั้งหมด") */
   --color-staff-stat-label: #6B7380;
+
+    /* ===== ฝั่งผู้ป่วย (LIFF) — ชุดสีจาก Figma ui user v2 ===== */
+  /* ตัวหนังสือจางในช่องที่ยังไม่ได้เลือก (เช่น "วัน", "เดือน") */
+  --color-liff-placeholder: #999999;
+  /* ปุ่มที่กดไม่ได้ (ตัวหนังสือ/พื้น) + พื้นปุ่มเทา */
+  --color-liff-disabled: #9E9E9E;
+  --color-liff-gray-button: #EEEEEE;
+  /* แดง: ข้อความผิดพลาด + ขอบกล่อง + พื้นกล่องเตือน */
+  --color-liff-red: #CC2626;
+  --color-liff-red-border: #FFBABA;
+  --color-liff-red-bg: #FFF2F2;
+  /* เขียวสำเร็จ: ตัวหนังสือ + พื้น (กล่อง "บันทึกแล้ว") */
+  --color-liff-success: #6DA15E;
+  --color-liff-success-bg: #EDFAE5;
   
   /* ฟอนต์หลัก Sarabun (โหลดจาก Google Fonts ใน index.html) ถ้าโหลดไม่ได้จะใช้ฟอนต์ระบบแทน */
   --font-sans: "Sarabun", ui-sans-serif, system-ui, sans-serif;

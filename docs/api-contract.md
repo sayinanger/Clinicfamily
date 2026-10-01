@@ -50,7 +50,7 @@
   `Authorization: Bearer <LINE ID token>` (ได้จาก `liff.getIDToken()`) → server ส่ง token ไปตรวจกับ LINE แล้วได้ `line_user_id` ของจริง
   (ไม่ให้หน้าเว็บส่ง lineUserId มาเอง เพราะปลอมได้)
 - **Staff:** login แล้ว server ตั้ง session cookie — ทุก API `/api/admin/...` (ยกเว้น login) ต้องมี cookie นี้
-- **โหมด mock:** ไม่มีการตรวจจริง — ใช้ผู้ป่วยจำลอง 1 คน และ staff login ด้วย `staff` / `1234`
+- **โหมด mock:** ไม่มีการตรวจจริง — ใช้ผู้ป่วยจำลอง 1 คน (เลือกสถานการณ์ได้ด้วย `?user=new` / `pdpa` / `profile` ท้าย URL หน้า `/liff`) และ staff login ด้วย `staff` / `1234`
 
 **ลำดับการเช็กฝั่งผู้ป่วย** (server เช็กทุกครั้ง)
 1. ตัวตน LINE → ไม่ผ่าน `401 UNAUTHORIZED`
@@ -346,3 +346,4 @@ Error: `410 HOLD_EXPIRED` · `409 TOO_LATE_TO_CHANGE` · `404 NOT_FOUND`
 - mock หน่วงเวลา ~300 ms ให้เหมือนเรียก server จริง
 - mock ต้องมีตัวอย่างครบทุกสถานะที่หน้าจอต้องแสดง (เช่น ยืนยันแล้ว-ยังไม่ถึงเวลา, ยืนยันแล้ว-ถึงเวลา, ไม่มา, ไม่มา-แก้คืนได้, ยกเลิก)
 - mock ไม่เช็กกฎจริง — กฎทั้งหมดทำที่ server สัปดาห์ 3–4
+- ยกเว้น U3 (บันทึกประวัติ): mock ตรวจข้อมูลตามเงื่อนไขใน U3 และตอบ `400 VALIDATION_ERROR` พร้อม `fields` เหมือน server เพื่อให้เห็นข้อความผิดใต้ช่องได้ตั้งแต่ตอนนี้
