@@ -54,7 +54,7 @@ export default function LiffPdpa() {
         </p>
 
         {/* ส่วนที่ 1 — สรุปสั้น */}
-        <ul className="mt-4 space-y-3 rounded-[5px] bg-primary-soft p-4 text-[17px] text-black">
+        <ul className="mt-4 space-y-3 rounded-[5px] bg-white p-4 text-[17px] text-black">
           <li>
             <span className="font-semibold">ข้อมูลที่เก็บ:</span> ชื่อ–นามสกุล เพศ วันเกิด เบอร์โทรศัพท์
             รหัสผู้ใช้ LINE และประวัติการนัดหมาย

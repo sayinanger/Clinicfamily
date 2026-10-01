@@ -147,7 +147,7 @@ export default function LiffProfile() {
           <Field label="เพศ" error={fieldErrors.gender}>
             <div className="mt-2 grid grid-cols-3">
               {GENDER_OPTIONS.map((option) => (
-                <label key={option.value} className="flex cursor-pointer items-center gap-2 text-[23px] font-semibold text-black">
+                <label key={option.value} className="flex cursor-pointer items-center gap-2 text-[19px] text-black">
                   <input
                     type="radio"
                     name="gender"
@@ -258,7 +258,7 @@ function selectClass(value) {
 function Field({ label, htmlFor, error, children }) {
   return (
     <div>
-      <label htmlFor={htmlFor} className="block text-[23px] font-semibold text-black">
+      <label htmlFor={htmlFor} className="block text-[20px] font-semibold text-black">
         {label}
       </label>
       {children}

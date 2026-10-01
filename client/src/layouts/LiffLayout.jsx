@@ -38,11 +38,12 @@ export default function LiffLayout() {
   }, [])
 
   if (loading) {
-    return <div className="flex min-h-screen items-center justify-center text-[18px] text-muted">กำลังโหลด...</div>
+        return <div className="flex min-h-screen items-center justify-center bg-primary-soft text-[18px] text-muted">กำลังโหลด...</div>
+    
   }
 
   if (error) {
-    return <div className="flex min-h-screen items-center justify-center p-6 text-center text-[18px] text-liff-red">{error}</div>
+        return <div className="flex min-h-screen items-center justify-center bg-primary-soft p-6 text-center text-[18px] text-liff-red">{error}</div>
   }
 
   // ยังไม่ยินยอม PDPA และหน้านี้ต้องยินยอมก่อน → ไปหน้า PDPA พร้อมจำว่าจะกลับมาหน้าไหน (?next=...)
@@ -51,9 +52,13 @@ export default function LiffLayout() {
     return <Navigate to={`/liff/pdpa?next=${next}`} replace />
   }
 
+  // พื้นเขียวจาง #EFF4EB (primary-soft) เต็มจอ — ทุกหน้าฝั่งผู้ป่วย (ผู้ใช้สั่ง 2026-10-02)
+  // เนื้อหากว้างไม่เกินขนาดมือถือ (max-w-md) และอยู่กึ่งกลาง
   return (
-    <div className="mx-auto min-h-screen max-w-md bg-white">
-      <Outlet context={{ lineUser, me, setMe }} />
+    <div className="min-h-screen bg-primary-soft">
+      <div className="mx-auto max-w-md">
+        <Outlet context={{ lineUser, me, setMe }} />
+      </div>
     </div>
   )
 }

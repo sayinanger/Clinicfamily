@@ -23,7 +23,7 @@ export default function LiffHome() {
         <p className="mt-1 text-center text-[16px] text-muted">แทน Rich Menu — ใช้ตอนพัฒนาเท่านั้น</p>
 
         {/* สถานะของผู้ใช้ตอนนี้ */}
-        <div className="mt-6 rounded-[5px] bg-primary-soft p-4 text-[17px] text-black">
+        <div className="mt-6 rounded-[5px] bg-white p-4 text-[17px] text-black">
           <p>ชื่อ LINE: {lineUser.displayName}</p>
           <p>ยินยอม PDPA: {me.pdpaAccepted ? '✔ แล้ว' : '✘ ยัง'}</p>
           <p>กรอกประวัติ: {me.profileCompleted ? '✔ แล้ว' : '✘ ยัง'}</p>
