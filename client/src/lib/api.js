@@ -1,4 +1,4 @@
-import { mockRequest } from './mock.js'
+import { mockRequest, mockNowMs } from './mock.js'
 
 // ทุกหน้าเว็บต้องขอข้อมูลผ่านไฟล์นี้เท่านั้น (ห้ามเรียก fetch เองในหน้า)
 // รายละเอียดของแต่ละ API ดูที่ docs/api-contract.md
@@ -129,4 +129,43 @@ export function acceptPdpa() {
 // กรอกผิด → throw error ที่ .data.fields = { ชื่อช่อง: 'ข้อความผิด' }
 export function saveProfile(profile) {
   return apiRequest('/api/me/profile', { method: 'PUT', body: profile })
+}
+
+// U4 — วันที่เลือกจองได้ (เสาร์–อาทิตย์ภายใน 14 วัน) → { days: [{ date, availableCount }] }
+export function getBookingDays() {
+  return apiRequest('/api/booking-days')
+}
+
+// U5 — ตารางเวลาของวันที่เลือก → { date, slots: [{ slotId, startTime, endTime, status }] }
+// status: available = ว่าง, unavailable = ไม่ว่าง, too_late = หมดเวลาจอง, held_by_me = ฉันถือคิวนี้อยู่
+export function getSlots(date) {
+  return apiRequest(`/api/slots?date=${date}`)
+}
+
+// U6 — ถือคิวไว้ 5 นาที (กดปุ่ม [จองคิว]) → { hold: { slotId, date, startTime, holdExpiresAt } }
+// purpose: 'book' = จองใหม่, 'reschedule' = เลื่อนนัด (ใช้ขั้น 7.5)
+export function createHold(slotId, purpose = 'book') {
+  return apiRequest('/api/holds', { method: 'POST', body: { slotId, purpose } })
+}
+
+// U7 — ปล่อยคิวที่ถืออยู่ (กด [ยกเลิก] ในป๊อปอัปยืนยัน)
+export function releaseHold() {
+  return apiRequest('/api/holds/current', { method: 'DELETE' })
+}
+
+// U8 — นัดที่ยังใช้งานอยู่ของฉัน → { appointment: {...} หรือ null, clinicPhone }
+export function getMyAppointment() {
+  return apiRequest('/api/me/appointment')
+}
+
+// U9 — ยืนยันการจอง (กด [ยืนยัน] ในป๊อปอัป) → { appointment: {...} }
+export function createAppointment(slotId) {
+  return apiRequest('/api/appointments', { method: 'POST', body: { slotId } })
+}
+
+// "ตอนนี้" (มิลลิวินาที) ที่หน้าเว็บใช้นับถอยหลังเวลาถือคิว
+// โหมดข้อมูลปลอม = นาฬิกาจำลองของ mock.js (เริ่มที่วันเปิดทำการถัดไป 07:12)
+// โหมดจริง = นาฬิกาเครื่อง (ถ้า server ใช้ DEMO_NOW ต้องปรับตรงนี้ตอนสัปดาห์ 3)
+export function getNowMs() {
+  return USE_MOCK ? mockNowMs() : Date.now()
 }

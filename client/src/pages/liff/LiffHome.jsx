@@ -1,11 +1,21 @@
 import { Link, useOutletContext } from 'react-router-dom'
-import { USE_MOCK } from '../../lib/api.js'
+import { USE_MOCK, getNowMs } from '../../lib/api.js'
 import { MOCK_PATIENT_SCENARIOS, getMockPatientScenario } from '../../lib/mock.js'
+import { formatThaiDayChip } from '../../lib/format.js'
+
+// เวลาของนาฬิกาจำลองตอนเปิดหน้า เช่น 'ศ. 2 ต.ค. 2569 20:00 น.' (ใช้เฉพาะโหมดข้อมูลปลอม)
+function mockClockText() {
+  // บวก 7 ชม. แล้วอ่านแบบ ISO (UTC) = ได้วันเวลาไทย เช่น '2026-10-02T20:00:00.000Z'
+  const bangkokIso = new Date(getNowMs() + 7 * 60 * 60 * 1000).toISOString()
+  const date = bangkokIso.slice(0, 10)
+  const buddhistYear = Number(date.slice(0, 4)) + 543
+  return `${formatThaiDayChip(date)} ${buddhistYear} ${bangkokIso.slice(11, 16)} น.`
+}
 
 // เมนูของหน้านี้ (แทนปุ่ม Rich Menu ใน LINE) — path = null คือหน้าที่ยังไม่ได้ทำ
 const MENU_ITEMS = [
   { label: 'ประวัติส่วนตัว', path: '/liff/profile' },
-  { label: 'จองคิว', path: null },
+  { label: 'จองคิว', path: '/liff/booking' },
   { label: 'ยกเลิก/เลื่อนนัด', path: null },
 ]
 
@@ -27,6 +37,9 @@ export default function LiffHome() {
           <p>ชื่อ LINE: {lineUser.displayName}</p>
           <p>ยินยอม PDPA: {me.pdpaAccepted ? '✔ แล้ว' : '✘ ยัง'}</p>
           <p>กรอกประวัติ: {me.profileCompleted ? '✔ แล้ว' : '✘ ยัง'}</p>
+          {/* นาฬิกาจำลอง — เปลี่ยนตามผู้ใช้ทดสอบ (ดูตารางในคู่มือการใช้งาน) */}
+          {/*แสดงบรรทัดนี้เฉพาะตอนใช้ข้อมูลปลอม พอต่อ server จริงแล้วบรรทัดนี้จะหายไปเอง เวลาที่แสดงคือเวลาตอนเปิดหน้า ถ้าอยากเห็นเวลาล่าสุดให้รีเฟรชหน้า*/}
+          {USE_MOCK && <p>นาฬิกาจำลอง: {mockClockText()}</p>}
         </div>
 
         {/* ปุ่มเมนู */}

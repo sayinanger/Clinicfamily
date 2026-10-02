@@ -641,3 +641,373 @@ handlers.push(
     },
   },
 )
+
+
+// ======================================================================
+// ===== หน้าจองคิว (U4–U9) — ขั้น 7.4 (กฎเวลาชุดที่ 2: 10 / 15 นาที) =====
+// ======================================================================
+// ใช้ตารางเวลาชุดเดียวกับหน้า "จัดการเวลา" ของ staff (slotsByDate) → สองฝั่งเห็นตรงกัน
+//   staff เห็น "มีผู้จองแล้ว / กำลังถูกจอง / ปิดรับการจอง" → ผู้ป่วยเห็น "ไม่ว่าง"
+// ผู้ป่วยจองแล้ว → staff เห็นนัดนี้ในหน้ารายการนัด (ถ้าเปิดในแท็บเดียวกัน)
+//
+// นาฬิกาจำลอง (แยกตามผู้ใช้ทดสอบ — ผู้ใช้เลือก 2026-10-03) แล้วเดินไปตามเวลาจริง (รีเฟรชหน้า = เริ่มใหม่)
+//   - ผู้ใช้ทั่วไป: "ตอนนี้" = คืนก่อนวันเปิดทำการถัดไป 20:00 → หน้าจองปกติ (ไม่มีหมดเวลาจอง ไม่มีกล่องส้ม)
+//   - ผู้ใช้ "จองกระชั้น" (?user=rush): "ตอนนี้" = วันเปิดทำการถัดไป 07:12 → เห็นกฎเวลาชุดที่ 2 ครบ:
+//       07:00, 07:15 = "หมดเวลาจอง" (เหลือ < 11 นาที)
+//       กดจอง 07:30 → กล่องแดง "ยกเลิกหรือเลื่อนไม่ได้แล้ว" (เส้นตาย 07:15 มาก่อนหมดเวลายืนยัน)
+//       กดจอง 08:45 → บรรทัด "ยกเลิกหรือเลื่อนได้ก่อน 08:30 น." ปกติ
+//       ทุกคิวของวันนั้นเหลือไม่ถึง 3 ชม. → กล่องส้ม + "นัดนี้จะไม่มีข้อความเตือนก่อนนัด"
+// server จริงใช้ now() จาก server/lib/clock.js (เวลาจริง หรือ DEMO_NOW)
+
+// เวลาถือคิว (วินาที) — ของจริงคือ HOLD_SECONDS=300 ของ server
+// อยากทดสอบป๊อปอัป "หมดเวลายืนยันการจอง" เร็ว ๆ → แก้เป็น 20 ชั่วคราว (อย่าลืมแก้กลับเป็น 300)
+const MOCK_HOLD_SECONDS = 300
+
+// ตัวเลขกฎเวลา (ตรงกับ .env ของ server — ดู claude/time-rules-v2.md)
+const BOOKING_CUTOFF_MINUTES = 10 // ต้องยืนยันก่อนนัดอย่างน้อย 10 นาที
+const CHANGE_CUTOFF_MINUTES = 15 // ยกเลิก/เลื่อนได้ก่อนนัด 15 นาที
+const SHORT_NOTICE_HOURS = 3 // จองห่างนัดไม่ถึง 3 ชม. = นัดกระชั้น (ไม่มีข้อความเตือน)
+const HOLD_MIN_SECONDS = 60 // เหลือเวลายืนยันไม่ถึง 1 นาที → ไม่ให้ถือคิว
+
+const MINUTE_MS = 60 * 1000
+
+// รหัสนัดของผู้ป่วยจำลอง (ตั้งเลขสูงไว้ ไม่ให้ซ้ำกับนัดปลอมของ staff)
+const MOCK_PATIENT_APPOINTMENT_ID = 9001
+
+// ----- นาฬิกาจำลอง -----
+// เวลาจริงตอนเปิดหน้า กับ เวลาจำลองตอนเปิดหน้า (เวลาไทย)
+const MOCK_CLOCK_REAL_START = Date.now()
+const MOCK_CLOCK_RUSH_START = Date.parse(`${nextOpenDay()}T07:12:00+07:00`) // เช้าวันนัด 07:12
+const MOCK_CLOCK_NORMAL_START = MOCK_CLOCK_RUSH_START - (11 * 60 + 12) * 60 * 1000 // คืนก่อนวันนัด 20:00
+
+// "ตอนนี้" ในโลกจำลอง (มิลลิวินาที) — api.js ส่งต่อให้หน้าเว็บใช้นับถอยหลัง
+export function mockNowMs() {
+  const fakeStart = mockPatient?.scenario === 'rush' ? MOCK_CLOCK_RUSH_START : MOCK_CLOCK_NORMAL_START
+  return fakeStart + (Date.now() - MOCK_CLOCK_REAL_START)
+}
+
+// เวลา (มิลลิวินาที) → ข้อความ ISO เวลาไทย เช่น '2026-10-03T07:15:00+07:00'
+function toBangkokIso(ms) {
+  return new Date(ms + 7 * 60 * 60 * 1000).toISOString().slice(0, 19) + '+07:00'
+}
+
+// วันที่ 'YYYY-MM-DD' (เวลาไทย) ของเวลาจำลองตอนนี้
+function mockTodayString() {
+  return toBangkokIso(mockNowMs()).slice(0, 10)
+}
+
+// เวลาเริ่มของคิว (มิลลิวินาที) จากวันที่ + เวลา เช่น ('2026-10-03', '07:30')
+function slotStartMs(date, startTime) {
+  return Date.parse(`${date}T${startTime}:00+07:00`)
+}
+
+// สถานการณ์เพิ่ม: มีนัดอยู่แล้ว (ใช้ ?user=booked)
+// นัดตัวอย่าง = วันเปิดลำดับที่ 3 ในรายการวันที่จองได้ เวลา 08:15 (แบบ Figma "ส. 10 ต.ค. 08:15")
+MOCK_PATIENT_SCENARIOS.booked = {
+  label: 'มีนัดอยู่แล้ว (มีประวัติแล้ว)',
+  pdpaAccepted: true,
+  profile: sampleProfile,
+}
+// สถานการณ์เพิ่ม: จองกระชั้น (ใช้ ?user=rush) — มีประวัติแล้ว ไม่มีนัด แต่นาฬิกาเป็นเช้าวันนัด 07:12
+MOCK_PATIENT_SCENARIOS.rush = {
+  label: 'จองกระชั้น (เช้าวันนัด 07:12)',
+  pdpaAccepted: true,
+  profile: sampleProfile,
+}
+
+// คิวที่ผู้ป่วยจำลองถืออยู่ { slotId, date, startTime, expiresAtMs } — null = ไม่ได้ถือ
+// expiresAtMs เป็นเวลาในโลกจำลอง · เก็บในหน่วยความจำ (รีเฟรชแล้วหาย เหมือนคิวถูกปล่อย)
+let mockHold = null
+
+// วันเปิด (เสาร์–อาทิตย์) ตั้งแต่วันนี้ (จำลอง) ถึงวันนี้ + 14 วัน
+function bookingDates() {
+  const dates = []
+  const [year, month, day] = mockTodayString().split('-').map(Number)
+  const cursor = new Date(year, month - 1, day)
+  for (let i = 0; i <= 14; i++) {
+    const dateString = toDateString(cursor)
+    // isBeyondBookingRange = วันที่ฝั่ง staff ยังไม่มีเวลา (นับ 14 วันจากเวลาเครื่อง) → ไม่ให้เลือก ให้สองฝั่งตรงกัน
+    if (isOpenDay(dateString) && !isBeyondBookingRange(dateString)) dates.push(dateString)
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  return dates
+}
+
+// หาเวลาจาก id พร้อมบอกว่าอยู่วันไหน → { slot, date }
+function findSlotWithDate(slotId) {
+  for (const [date, list] of Object.entries(slotsByDate)) {
+    const slot = list.find((item) => item.slotId === Number(slotId))
+    if (slot) return { slot, date }
+  }
+  throw mockError(404, 'NOT_FOUND', 'ไม่พบเวลานี้')
+}
+
+// ถ้าคิวที่ถือไว้หมดเวลาแล้ว → ปล่อยคิว (server จริงให้ cron เคลียร์ทุกนาที)
+function clearExpiredHold() {
+  if (mockHold && mockNowMs() >= mockHold.expiresAtMs) {
+    releaseMockHold()
+  }
+}
+
+// ปล่อยคิวที่ถืออยู่ → เวลานั้นกลับเป็น "ว่าง"
+function releaseMockHold() {
+  if (!mockHold) return
+  const { slot } = findSlotWithDate(mockHold.slotId)
+  if (slot.status === 'held') slot.status = 'available'
+  mockHold = null
+}
+
+// เหลือเวลาก่อนนัดกี่นาที (ตามนาฬิกาจำลอง)
+function minutesUntil(date, startTime) {
+  return (slotStartMs(date, startTime) - mockNowMs()) / MINUTE_MS
+}
+
+// นัดกระชั้น = เหลือไม่ถึง 3 ชม. (นับจากตอนนี้)
+function isShortNotice(date, startTime) {
+  return minutesUntil(date, startTime) < SHORT_NOTICE_HOURS * 60
+}
+
+// สถานะที่ผู้ป่วยเห็น (U5) จากสถานะฝั่ง staff
+function patientSlotStatus(date, slot) {
+  if (mockHold && mockHold.slotId === slot.slotId) return 'held_by_me'
+  if (minutesUntil(date, slot.startTime) < BOOKING_CUTOFF_MINUTES + 1) return 'too_late' // เหลือ < 11 นาที
+  if (slot.status === 'available') return 'available'
+  return 'unavailable' // มีคนจอง / กำลังถูกจอง / ปิด — ผู้ป่วยไม่ต้องรู้ว่าแบบไหน
+}
+
+// ใส่นัดของผู้ป่วยจำลองลงในข้อมูลของ staff (ตารางนัด + เวลานั้นเป็น "มีผู้จองแล้ว")
+function putPatientAppointmentIntoStaffData() {
+  const appointment = mockPatient?.appointment
+  if (!appointment || appointment.status !== 'booked') return
+
+  const slot = getSlotsOfDate(appointment.date).find((item) => item.startTime === appointment.startTime)
+  if (slot) slot.status = 'booked'
+
+  const list = getAppointmentsOfDate(appointment.date)
+  if (!list.some((item) => item.appointmentId === appointment.appointmentId)) {
+    list.push({
+      appointmentId: appointment.appointmentId,
+      firstName: mockPatient.profile.firstName,
+      lastName: mockPatient.profile.lastName,
+      phone: mockPatient.profile.phone,
+      date: appointment.date,
+      startTime: appointment.startTime,
+      status: 'booked',
+      canMarkNoShow: false,
+      canUndoNoShow: false,
+      undoNoShowUntil: null,
+    })
+    list.sort((a, b) => a.startTime.localeCompare(b.startTime)) // เรียงตามเวลา
+  }
+}
+
+// นัดของผู้ป่วยจำลอง — สถานการณ์ "มีนัดอยู่แล้ว" ที่ยังไม่มีนัด → สร้างนัดตัวอย่างให้ครั้งแรก
+// (appointment = undefined แปลว่ายังไม่เคยสร้าง, null แปลว่าไม่มีนัด)
+function getPatientAppointment() {
+  if (!mockPatient) return null
+  if (mockPatient.scenario === 'booked' && mockPatient.appointment === undefined) {
+    const date = bookingDates()[2] || bookingDates()[0]
+    mockPatient.appointment = {
+      appointmentId: MOCK_PATIENT_APPOINTMENT_ID,
+      date,
+      startTime: '08:15',
+      endTime: '08:30',
+      status: 'booked',
+    }
+    saveMockPatient()
+  }
+  putPatientAppointmentIntoStaffData()
+  return mockPatient.appointment || null
+}
+
+// เส้นตายยกเลิก/เลื่อนของนัด (มิลลิวินาที) = เวลานัด − 15 นาที
+function changeDeadlineMs(date, startTime) {
+  return slotStartMs(date, startTime) - CHANGE_CUTOFF_MINUTES * MINUTE_MS
+}
+
+// นัดในรูปแบบที่ API ตอบ (แบบ U8) — เพิ่ม canChange + changeDeadline (15 นาทีก่อนนัด)
+function appointmentForApi(appointment) {
+  if (!appointment || appointment.status !== 'booked') return null
+  const deadlineMs = changeDeadlineMs(appointment.date, appointment.startTime)
+  return {
+    ...appointment,
+    canChange: mockNowMs() < deadlineMs,
+    changeDeadline: toBangkokIso(deadlineMs),
+  }
+}
+
+// API จอง/ถือคิว ต้องกรอกประวัติก่อน — ยังไม่กรอก → 403 เหมือน server จริง
+function requirePatientProfile() {
+  if (!mockPatient?.profile) {
+    throw mockError(403, 'PROFILE_REQUIRED', 'กรุณากรอกประวัติส่วนตัวก่อนจองคิว')
+  }
+}
+
+// ผู้ป่วยมีนัดที่ยังใช้งานอยู่ → 409 พร้อมแนบนัด (หน้าเว็บใช้แสดงป๊อปอัป "คุณมีนัดอยู่แล้ว")
+function throwIfHasActiveAppointment() {
+  const appointment = appointmentForApi(getPatientAppointment())
+  if (appointment) {
+    throw mockError(409, 'HAS_ACTIVE_APPOINTMENT', 'คุณมีนัดอยู่แล้ว', { appointment })
+  }
+}
+
+handlers.push(
+  // U4 — วันที่เลือกจองได้
+  {
+    method: 'GET',
+    path: '/api/booking-days',
+    handle() {
+      requirePatientPdpa()
+      clearExpiredHold()
+      getPatientAppointment()
+      const days = bookingDates().map((date) => ({
+        date,
+        availableCount: getSlotsOfDate(date).filter((slot) => patientSlotStatus(date, slot) === 'available').length,
+      }))
+      return { days }
+    },
+  },
+
+  // U5 — ตารางเวลาของวัน
+  {
+    method: 'GET',
+    path: '/api/slots',
+    handle({ query }) {
+      requirePatientPdpa()
+      clearExpiredHold()
+      getPatientAppointment()
+      const date = query.date
+      if (!date || !bookingDates().includes(date)) {
+        throw mockError(400, 'INVALID_DATE', 'วันที่นี้ไม่เปิดให้จอง')
+      }
+      const slots = getSlotsOfDate(date).map((slot) => ({
+        slotId: slot.slotId,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        status: patientSlotStatus(date, slot),
+        shortNotice: isShortNotice(date, slot.startTime),
+      }))
+      return { date, slots }
+    },
+  },
+
+  // U6 — ถือคิวไว้ (กดปุ่ม [จองคิว])
+  {
+    method: 'POST',
+    path: '/api/holds',
+    handle({ body }) {
+      requirePatientPdpa()
+      requirePatientProfile()
+      clearExpiredHold()
+      const purpose = body?.purpose || 'book'
+      const currentAppointment = appointmentForApi(getPatientAppointment())
+      if (purpose === 'book') {
+        throwIfHasActiveAppointment()
+      } else if (!currentAppointment) {
+        throw mockError(409, 'NO_APPOINTMENT_TO_RESCHEDULE', 'ไม่มีนัดที่จะเลื่อน')
+      }
+
+      const { slot, date } = findSlotWithDate(body?.slotId)
+      const status = patientSlotStatus(date, slot)
+      if (status === 'too_late') {
+        throw mockError(400, 'TOO_LATE_TO_BOOK', 'ต้องจองก่อนเวลานัดอย่างน้อย 10 นาที')
+      }
+      if (status === 'unavailable') {
+        throw mockError(409, 'SLOT_TAKEN', 'คิวนี้มีผู้จองแล้ว กรุณาเลือกเวลาอื่น')
+      }
+
+      // เวลาหมดอายุ = ค่าที่มาก่อนระหว่าง (ตอนนี้ + 5 นาที) กับ (เวลานัด − 10 นาที)
+      // เลื่อนนัด → เทียบกับ (เวลานัดเดิม − 15 นาที) ด้วย
+      const now = mockNowMs()
+      const bookingDeadline = slotStartMs(date, slot.startTime) - BOOKING_CUTOFF_MINUTES * MINUTE_MS
+      let expiresAtMs = Math.min(now + MOCK_HOLD_SECONDS * 1000, bookingDeadline)
+      let limitedByOldAppointment = false
+      if (purpose === 'reschedule') {
+        const oldDeadline = changeDeadlineMs(currentAppointment.date, currentAppointment.startTime)
+        if (oldDeadline < expiresAtMs) {
+          expiresAtMs = oldDeadline
+          limitedByOldAppointment = true
+        }
+      }
+      // เหลือเวลายืนยันไม่ถึง 1 นาที → ไม่ให้ถือ
+      if (expiresAtMs - now < HOLD_MIN_SECONDS * 1000) {
+        if (limitedByOldAppointment) {
+          const deadlineText = toBangkokIso(expiresAtMs).slice(11, 16)
+          throw mockError(409, 'TOO_LATE_TO_CHANGE', `ยกเลิกหรือเลื่อนนัดได้ก่อน ${deadlineText} น. เท่านั้น หากมาไม่ได้ กรุณาโทรแจ้งคลินิก`)
+        }
+        throw mockError(400, 'TOO_LATE_TO_BOOK', 'ต้องจองก่อนเวลานัดอย่างน้อย 10 นาที')
+      }
+
+      // ถือได้ครั้งละ 1 คิว → ปล่อยคิวเดิมก่อน แล้วถือคิวใหม่
+      releaseMockHold()
+      slot.status = 'held'
+      mockHold = { slotId: slot.slotId, date, startTime: slot.startTime, expiresAtMs }
+      return {
+        hold: {
+          slotId: slot.slotId,
+          date,
+          startTime: slot.startTime,
+          holdExpiresAt: toBangkokIso(expiresAtMs),
+          changeDeadline: toBangkokIso(changeDeadlineMs(date, slot.startTime)),
+          shortNotice: isShortNotice(date, slot.startTime),
+        },
+      }
+    },
+  },
+
+  // U7 — ปล่อยคิวที่ถืออยู่ (ไม่มีคิวก็ตอบ ok)
+  {
+    method: 'DELETE',
+    path: '/api/holds/current',
+    handle() {
+      requirePatientPdpa()
+      releaseMockHold()
+      return { ok: true }
+    },
+  },
+
+  // U8 — นัดที่ยังใช้งานอยู่ของฉัน
+  {
+    method: 'GET',
+    path: '/api/me/appointment',
+    handle() {
+      requirePatientPdpa()
+      return {
+        appointment: appointmentForApi(getPatientAppointment()),
+        clinicPhone: import.meta.env.VITE_CLINIC_PHONE || '',
+      }
+    },
+  },
+
+  // U9 — ยืนยันการจอง (ไม่ตรวจกฎเวลาซ้ำ ตรวจแค่ว่าคิวที่ถือยังไม่หมดเวลา)
+  {
+    method: 'POST',
+    path: '/api/appointments',
+    handle({ body }) {
+      requirePatientPdpa()
+      requirePatientProfile()
+      clearExpiredHold()
+      if (!mockHold || mockHold.slotId !== Number(body?.slotId)) {
+        throw mockError(410, 'HOLD_EXPIRED', 'หมดเวลายืนยันการจอง คิวถูกปล่อยให้ผู้อื่นจองได้แล้ว')
+      }
+      throwIfHasActiveAppointment()
+
+      const { slot, date } = findSlotWithDate(mockHold.slotId)
+      slot.status = 'booked'
+      mockHold = null
+      mockPatient.appointment = {
+        appointmentId: MOCK_PATIENT_APPOINTMENT_ID,
+        date,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        status: 'booked',
+      }
+      saveMockPatient()
+      putPatientAppointmentIntoStaffData()
+      return { appointment: appointmentForApi(mockPatient.appointment) }
+    },
+  },
+)
+
+// เปิดหน้าใหม่ (รีเฟรช) แล้วผู้ป่วยจำลองมีนัดอยู่ → ใส่นัดกลับเข้าข้อมูลของ staff
+putPatientAppointmentIntoStaffData()

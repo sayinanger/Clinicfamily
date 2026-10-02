@@ -64,3 +64,21 @@ export const THAI_MONTHS = [
   'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
   'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
 ]
+
+// ชื่อวัน/เดือนแบบย่อ (เขียนเองแทน toLocaleDateString เพื่อให้ทุกเบราว์เซอร์แสดงเหมือนกัน)
+const THAI_WEEKDAYS_SHORT = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'] // 0 = อาทิตย์
+const THAI_WEEKDAYS_LONG = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์']
+const THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
+
+// '2026-10-03' → 'ส. 3 ต.ค.' (ปุ่มเลือกวัน หน้าจองคิว)
+export function formatThaiDayChip(dateString) {
+  const date = toDateObject(dateString)
+  return `${THAI_WEEKDAYS_SHORT[date.getDay()]} ${date.getDate()} ${THAI_MONTHS_SHORT[date.getMonth()]}`
+}
+
+// '2026-10-03' → 'วันเสาร์ที่ 3 ต.ค. 2569' (ป๊อปอัปหน้าจองคิว)
+export function formatThaiDateWithWeekday(dateString) {
+  const date = toDateObject(dateString)
+  const buddhistYear = date.getFullYear() + 543 // ปี ค.ศ. → พ.ศ.
+  return `วัน${THAI_WEEKDAYS_LONG[date.getDay()]}ที่ ${date.getDate()} ${THAI_MONTHS_SHORT[date.getMonth()]} ${buddhistYear}`
+}

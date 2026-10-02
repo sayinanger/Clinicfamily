@@ -80,6 +80,12 @@
   /* เขียวสำเร็จ: ตัวหนังสือ + พื้น (กล่อง "บันทึกแล้ว") */
   --color-liff-success: #6DA15E;
   --color-liff-success-bg: #EDFAE5;
+    /* เส้นตารางเวลา (หน้าจองคิว) */
+  --color-liff-table-line: #D4E4C9;
+    /* ส้ม: กล่อง/ข้อความ "ไม่มีข้อความเตือนก่อนนัด" (นัดกระชั้น — ไม่มีใน Figma) */
+  --color-liff-orange: #B86200;
+  --color-liff-orange-border: #F5C58A;
+  --color-liff-orange-bg: #FFF6EB;
   
   /* ฟอนต์หลัก Sarabun (โหลดจาก Google Fonts ใน index.html) ถ้าโหลดไม่ได้จะใช้ฟอนต์ระบบแทน */
   --font-sans: "Sarabun", ui-sans-serif, system-ui, sans-serif;

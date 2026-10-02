@@ -4,6 +4,7 @@ import AdminLayout from './layouts/AdminLayout.jsx'
 import LiffHome from './pages/liff/LiffHome.jsx'
 import LiffPdpa from './pages/liff/LiffPdpa.jsx'
 import LiffProfile from './pages/liff/LiffProfile.jsx'
+import LiffBooking from './pages/liff/LiffBooking.jsx'
 import AdminLogin from './pages/admin/AdminLogin.jsx'
 import AdminAppointments from './pages/admin/AdminAppointments.jsx'
 import AdminSlots from './pages/admin/AdminSlots.jsx'
@@ -24,6 +25,7 @@ export default function App() {
         <Route index element={<LiffHome />} />
         <Route path="pdpa" element={<LiffPdpa />} />
         <Route path="profile" element={<LiffProfile />} />
+        <Route path="booking" element={<LiffBooking />} />
       </Route>
 
       {/* ฝั่ง staff — ทุกหน้าใน AdminLayout ต้อง login ก่อน (AdminLayout เช็กให้) */}
@@ -38,3 +40,4 @@ export default function App() {
     </Routes>
   )
 }
+
