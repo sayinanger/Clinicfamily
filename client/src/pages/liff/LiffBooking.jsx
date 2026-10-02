@@ -11,7 +11,7 @@ import {
   getNowMs,
 } from '../../lib/api.js'
 import { closeLiff } from '../../lib/liff.js'
-import { formatThaiDateWithWeekday, formatPhone } from '../../lib/format.js'
+import { formatThaiDateWithWeekday} from '../../lib/format.js'
 import BookingCalendar from '../../components/BookingCalendar.jsx'
 
 // คำที่แสดงในคอลัมน์ "สถานะ" ตามค่า status จาก U5
@@ -106,7 +106,6 @@ export default function LiffBooking() {
   const [loadingSlots, setLoadingSlots] = useState(false)
   const [errorMessage, setErrorMessage] = useState('') // ข้อความแดงเหนือตาราง
   const [busy, setBusy] = useState(false) // กำลังส่งคำขอ → กันกดซ้ำ
-  const [clinicPhone, setClinicPhone] = useState('') // เบอร์คลินิก (จาก U8) ใช้ในกล่องแดง
   
 
   const [hold, setHold] = useState(null) // คิวที่ถืออยู่ { slotId, date, startTime, holdExpiresAt } — null = ไม่ได้ถือ
@@ -139,7 +138,6 @@ export default function LiffBooking() {
       try {
         const [appointmentData, daysData] = await Promise.all([getMyAppointment(), getBookingDays()])
         setDays(daysData.days)
-        setClinicPhone(appointmentData.clinicPhone)
         // เริ่มที่วันแรกที่ยังมีคิวว่าง (ถ้าเต็มทุกวัน → วันแรก)
         const firstBookable = daysData.days.find((day) => day.availableCount > 0) || daysData.days[0]
         if (firstBookable) setSelectedDate(firstBookable.date)
