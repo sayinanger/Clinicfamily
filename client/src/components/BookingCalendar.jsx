@@ -23,9 +23,10 @@ function todayString() {
 //   days         = วันที่จองได้จาก U4 [{ date: 'YYYY-MM-DD', availableCount }]
 //   selectedDate = วันที่เลือกอยู่ตอนนี้
 //   onSelect(date) = กดวันที่ → ส่งวันที่กลับไปให้หน้าจองคิวโหลดตารางใหม่ทันที
+//   originalDate = (หน้าเลื่อนนัดเท่านั้น — ขั้น 7.5) วันของนัดเดิม → วงกลมเส้นประ + คำอธิบาย "นัดเดิม"
 // วันเปิดที่ยังมีคิวว่าง = วงกลมขอบเขียว (กดได้), วันที่เลือก = วงกลมเขียวทึบ,
 // วันอื่น/วันที่เต็มแล้ว = ตัวเลขเทา ไม่มีวงกลม (กดไม่ได้)
-export default function BookingCalendar({ days, selectedDate, onSelect }) {
+export default function BookingCalendar({ days, selectedDate, onSelect, originalDate }) {
   const [viewMonth, setViewMonth] = useState(selectedDate.slice(0, 7)) // เดือนที่กำลังดู 'YYYY-MM'
 
   // วันที่กดได้ = มีคิวว่างอย่างน้อย 1 คิว
@@ -89,6 +90,10 @@ export default function BookingCalendar({ days, selectedDate, onSelect }) {
           let circleClass = 'text-[#BBBBBB]' // วันอื่น/เต็ม → ตัวเลขเทา ไม่มีวงกลม
           if (canPick && isSelected) circleClass = 'border-2 border-primary bg-primary font-bold text-white'
           else if (canPick) circleClass = 'border-2 border-primary font-bold text-primary'
+          // วันของนัดเดิม (หน้าเลื่อนนัด) → เส้นประ (ถ้าวันนั้นเต็ม = วงกลมเส้นประสีเทา)
+          if (date === originalDate) {
+            circleClass += canPick ? ' border-dashed' : ' border-2 border-dashed border-[#BBBBBB]'
+          }
 
           return (
             <div key={date} className="flex h-9 items-center justify-center">
@@ -121,6 +126,12 @@ export default function BookingCalendar({ days, selectedDate, onSelect }) {
           <i className="inline-block h-3 w-3 rounded-full bg-[#DDDDDD]" />
           เต็ม/ปิด
         </span>
+        {originalDate && (
+          <span className="flex items-center gap-1">
+            <i className="inline-block h-3 w-3 rounded-full border-2 border-dashed border-primary" />
+            นัดเดิม
+          </span>
+        )}
       </div>
     </div>
   )

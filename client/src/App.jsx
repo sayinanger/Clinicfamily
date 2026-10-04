@@ -5,6 +5,7 @@ import LiffHome from './pages/liff/LiffHome.jsx'
 import LiffPdpa from './pages/liff/LiffPdpa.jsx'
 import LiffProfile from './pages/liff/LiffProfile.jsx'
 import LiffBooking from './pages/liff/LiffBooking.jsx'
+import LiffAppointment from './pages/liff/LiffAppointment.jsx'
 import AdminLogin from './pages/admin/AdminLogin.jsx'
 import AdminAppointments from './pages/admin/AdminAppointments.jsx'
 import AdminSlots from './pages/admin/AdminSlots.jsx'
@@ -26,6 +27,9 @@ export default function App() {
         <Route path="pdpa" element={<LiffPdpa />} />
         <Route path="profile" element={<LiffProfile />} />
         <Route path="booking" element={<LiffBooking />} />
+        {/* หน้ายกเลิก/เลื่อนนัด + หน้าเลื่อนนัด (ขั้น 7.5) — หน้าเลื่อนนัดใช้ไฟล์เดียวกับหน้าจองคิว แบบ mode="reschedule" */}
+        <Route path="appointment" element={<LiffAppointment />} />
+        <Route path="reschedule" element={<LiffBooking mode="reschedule" />} />
       </Route>
 
       {/* ฝั่ง staff — ทุกหน้าใน AdminLayout ต้อง login ก่อน (AdminLayout เช็กให้) */}

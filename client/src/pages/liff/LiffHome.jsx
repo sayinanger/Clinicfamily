@@ -16,7 +16,7 @@ function mockClockText() {
 const MENU_ITEMS = [
   { label: 'ประวัติส่วนตัว', path: '/liff/profile' },
   { label: 'จองคิว', path: '/liff/booking' },
-  { label: 'ยกเลิก/เลื่อนนัด', path: null },
+  { label: 'ยกเลิก/เลื่อนนัด', path: '/liff/appointment' },
 ]
 
 // หน้าเมนูทดสอบ (/liff) — ใช้ตอนพัฒนาบนเบราว์เซอร์เท่านั้น

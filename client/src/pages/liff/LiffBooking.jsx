@@ -8,11 +8,13 @@ import {
   releaseHold,
   getMyAppointment,
   createAppointment,
+  rescheduleAppointment,
   getNowMs,
 } from '../../lib/api.js'
 import { closeLiff } from '../../lib/liff.js'
-import { formatThaiDateWithWeekday} from '../../lib/format.js'
+import { formatThaiDateWeekdayShort, timeFromIso } from '../../lib/format.js'
 import BookingCalendar from '../../components/BookingCalendar.jsx'
+import { Popup, PopupTitle, PopupText, PopupBigTime, PopupButton } from '../../components/Popup.jsx'
 
 // คำที่แสดงในคอลัมน์ "สถานะ" ตามค่า status จาก U5
 // held_by_me (ฉันถือคิวนี้อยู่) แสดงเหมือน "ว่าง" และกดได้ — กดซ้ำ = ถือคิวเดิมต่อ
@@ -34,70 +36,17 @@ function formatCountdown(totalSeconds) {
   return [hours, minutes, seconds].map((n) => String(n).padStart(2, '0')).join(' : ')
 }
 
-// เวลา ISO เช่น '2026-10-03T07:15:00+07:00' → '07:15' (ตัดเอาชั่วโมง:นาที เวลาไทย)
-function timeFromIso(iso) {
-  return iso.slice(11, 16)
-}
-
-// กรอบป๊อปอัป: พื้นดำจาง 45% เต็มจอ + การ์ดขาวกลางจอ (Figma 278:198 / 278:307 / 278:411)
-// children = เนื้อหาข้างในการ์ด
-// onClose = ถ้าส่งมา จะมีปุ่มกากบาท ✕ มุมขวาบน (กดแล้วเรียก onClose)
-function Popup({ children, onClose }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-6">
-      <div className="relative flex w-full max-w-[340px] flex-col items-center gap-[10px] rounded-[12px] bg-white px-[28px] pt-[28px] pb-[26px] text-center">
-        {onClose && (
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="ปิด"
-            className="absolute top-2 right-2 flex h-9 w-9 items-center justify-center text-[22px] leading-none text-muted"
-          >
-            ✕
-          </button>
-        )}
-        {children}
-      </div>
-    </div>
-  )
-}
-
-// หัวข้อในป๊อปอัป (26px ตัวหนา) — color = คลาสสีตัวหนังสือ
-function PopupTitle({ children, color = 'text-black' }) {
-  return <p className={`text-[26px] leading-[1.4] font-bold ${color}`}>{children}</p>
-}
-
-// บรรทัดข้อความในป๊อปอัป (18px)
-function PopupText({ children }) {
-  return <p className="w-full text-[18px] leading-[1.4] font-medium whitespace-pre-wrap text-black">{children}</p>
-}
-
-// สีปุ่มในป๊อปอัป: green = พื้นเขียวอ่อน, red = กรอบแดง
-const POPUP_BUTTON_COLORS = {
-  green: 'bg-primary-light text-primary',
-  red: 'border-[1.5px] border-liff-red-border bg-white text-liff-red',
-}
-
-// ปุ่มในป๊อปอัป — variant เลือกสีจาก POPUP_BUTTON_COLORS
-function PopupButton({ children, onClick, disabled, variant = 'green' }) {
-  const colors = POPUP_BUTTON_COLORS[variant]
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={`rounded-[6px] px-[22px] py-[8px] text-[18px] leading-[1.4] font-semibold disabled:opacity-60 ${colors}`}
-    >
-      {children}
-    </button>
-  )
-}
-
 // หน้าจองคิว (/liff/booking) — Figma 275:184
 // ขั้นตอน: เลือกวัน → กด [จองคิว] (ถือคิว 5 นาที + นับถอยหลัง) → ป๊อปอัปยืนยัน → [ยืนยัน] = จองสำเร็จ
-export default function LiffBooking() {
+//
+// หน้าเลื่อนนัด (/liff/reschedule) ใช้ไฟล์นี้ด้วย — App.jsx ส่ง mode="reschedule" มา (ขั้น 7.5, Figma 279:240 / 279:338)
+// ต่างจากหน้าจองคิวแค่: หัวข้อ "เลื่อนนัด", แถบ "นัดเดิม" ด้านบน, ปฏิทินมีวงกลมเส้นประที่วันนัดเดิม,
+// ถือคิวแบบ purpose 'reschedule', ป๊อปอัปยืนยัน "จาก ... เป็น ...", กดยืนยันแล้วเรียก U11 แทน U9
+export default function LiffBooking({ mode = 'book' }) {
   const { me } = useOutletContext() // ข้อมูลของฉันจาก LiffLayout (มีประวัติไว้แสดงในป๊อปอัป)
   const navigate = useNavigate()
+  const isReschedule = mode === 'reschedule' // true = หน้าเลื่อนนัด
+  const thisPagePath = isReschedule ? '/liff/reschedule' : '/liff/booking' // ใช้กับ ?next= ตอนพาไปกรอกประวัติ
 
   const [days, setDays] = useState([]) // วันที่เลือกได้ (U4)
   const [selectedDate, setSelectedDate] = useState('') // วันที่กำลังดู 'YYYY-MM-DD'
@@ -114,8 +63,8 @@ export default function LiffBooking() {
   // ป๊อปอัปที่เปิดอยู่: null = ไม่มี, 'confirm' = ยืนยันการจอง, 'expired' = หมดเวลายืนยัน,
   // 'hasAppointment' = มีนัดอยู่แล้ว, 'success' = จองสำเร็จ
   const [popup, setPopup] = useState(null)
-  const [existingAppointment, setExistingAppointment] = useState(null) // นัดเดิม (ป๊อปอัปมีนัดอยู่แล้ว)
-  const [bookedAppointment, setBookedAppointment] = useState(null) // นัดที่เพิ่งจอง (ป๊อปอัปจองสำเร็จ)
+  const [existingAppointment, setExistingAppointment] = useState(null) // นัดเดิม (ป๊อปอัปมีนัดอยู่แล้ว / แถบนัดเดิมของหน้าเลื่อนนัด)
+  const [bookedAppointment, setBookedAppointment] = useState(null) // นัดที่เพิ่งจอง/เลื่อน (ป๊อปอัปสำเร็จ)
   const [expiredStartTime, setExpiredStartTime] = useState('') // เวลาของคิวที่หมดเวลา (ป๊อปอัปหมดเวลา)
 
   // โหลดตารางเวลาของวันที่ระบุ
@@ -137,12 +86,20 @@ export default function LiffBooking() {
     async function start() {
       try {
         const [appointmentData, daysData] = await Promise.all([getMyAppointment(), getBookingDays()])
+        // หน้าเลื่อนนัด: ไม่มีนัด หรือเลยเวลาแก้ไขแล้ว → กลับไปหน้ายกเลิก/เลื่อนนัด (หน้านั้นแสดงข้อความให้เอง)
+        if (isReschedule && !appointmentData.appointment?.canChange) {
+          navigate('/liff/appointment', { replace: true })
+          return
+        }
         setDays(daysData.days)
         // เริ่มที่วันแรกที่ยังมีคิวว่าง (ถ้าเต็มทุกวัน → วันแรก)
         const firstBookable = daysData.days.find((day) => day.availableCount > 0) || daysData.days[0]
         if (firstBookable) setSelectedDate(firstBookable.date)
-        // มีนัดอยู่แล้ว → ขึ้นป๊อปอัปทันที (ผู้ใช้เลือก 2026-10-02)
-        if (appointmentData.appointment) {
+        if (isReschedule) {
+          // หน้าเลื่อนนัด: จำนัดเดิมไว้แสดงในแถบ "นัดเดิม" และป๊อปอัปยืนยัน
+          setExistingAppointment(appointmentData.appointment)
+        } else if (appointmentData.appointment) {
+          // หน้าจองคิว: มีนัดอยู่แล้ว → ขึ้นป๊อปอัปทันที (ผู้ใช้เลือก 2026-10-02)
           setExistingAppointment(appointmentData.appointment)
           setPopup('hasAppointment')
         }
@@ -153,7 +110,7 @@ export default function LiffBooking() {
       }
     }
     start()
-  }, [me.profileCompleted])
+  }, [me.profileCompleted, isReschedule, navigate])
 
   // เปลี่ยนวันที่ → โหลดตารางของวันนั้น
   useEffect(() => {
@@ -180,7 +137,7 @@ export default function LiffBooking() {
 
   // ยังไม่กรอกประวัติ → ไปกรอกก่อน บันทึกแล้วกลับมาหน้านี้ (?next=)
   if (!me.profileCompleted) {
-    return <Navigate to="/liff/profile?next=/liff/booking" replace />
+    return <Navigate to={`/liff/profile?next=${thisPagePath}`} replace />
   }
 
   // กดปุ่ม [จองคิว] ในตาราง → ถือคิว (U6)
@@ -188,7 +145,7 @@ export default function LiffBooking() {
     setErrorMessage('')
     setBusy(true)
     try {
-      const data = await createHold(slot.slotId, 'book')
+      const data = await createHold(slot.slotId, isReschedule ? 'reschedule' : 'book')
       setHold(data.hold)
       setPopup('confirm')
     } catch (err) {
@@ -196,7 +153,11 @@ export default function LiffBooking() {
         setExistingAppointment(err.data?.appointment)
         setPopup('hasAppointment')
       } else if (err.code === 'PROFILE_REQUIRED') {
-        navigate('/liff/profile?next=/liff/booking')
+        navigate(`/liff/profile?next=${thisPagePath}`)
+      } else if (err.code === 'NO_APPOINTMENT_TO_RESCHEDULE' || err.code === 'TOO_LATE_TO_CHANGE') {
+        // หน้าเลื่อนนัด: ไม่มีนัดแล้ว / นัดเดิมใกล้เส้นตายจนเลื่อนไม่ทัน → กลับหน้ายกเลิก/เลื่อนนัด
+        // (หน้านั้นแสดง "คุณยังไม่มีนัด" หรือกล่องแดงพร้อมเบอร์คลินิกให้เอง — ผู้ใช้เลือก 2026-10-04)
+        navigate('/liff/appointment', { replace: true })
       } else {
         // เช่น คิวมีคนจองไปก่อน / หมดเวลาจอง → ข้อความแดง + โหลดตารางใหม่
         setErrorMessage(err.message)
@@ -207,11 +168,11 @@ export default function LiffBooking() {
     }
   }
 
-  // ป๊อปอัปยืนยัน: กด [ยืนยัน] → จอง (U9)
+  // ป๊อปอัปยืนยัน: กด [ยืนยัน] → จอง (U9) / หน้าเลื่อนนัด → เลื่อนนัด (U11)
   async function handleConfirm() {
     setBusy(true)
     try {
-      const data = await createAppointment(hold.slotId)
+      const data = isReschedule ? await rescheduleAppointment(hold.slotId) : await createAppointment(hold.slotId)
       setHold(null)
       setBookedAppointment(data.appointment)
       setPopup('success')
@@ -253,7 +214,7 @@ export default function LiffBooking() {
     loadSlots(selectedDate)
   }
 
-  // ป๊อปอัปจองสำเร็จ: กด [ปิด]
+  // ป๊อปอัปจองสำเร็จ / เลื่อนนัดสำเร็จ: กด [ปิด]
   // ในแอป LINE = ปิดหน้าต่าง LIFF / ทดสอบบนเบราว์เซอร์ (ข้อมูลปลอม) = กลับเมนูทดสอบ
   function handleSuccessClose() {
     if (USE_MOCK) {
@@ -275,16 +236,24 @@ export default function LiffBooking() {
 
   return (
     <div className="px-[31px] pt-12 pb-10">
-      <h1 className="text-center text-[29px] font-semibold text-black">จองคิว</h1>
+      <h1 className="text-center text-[29px] font-semibold text-black">{isReschedule ? 'เลื่อนนัด' : 'จองคิว'}</h1>
+
+      {/* แถบนัดเดิม — หน้าเลื่อนนัดเท่านั้น (Figma 279:240) */}
+      {isReschedule && existingAppointment && (
+        <div className="mt-5 rounded-[5px] border-[1.5px] border-primary-light bg-white px-2 py-1.5 text-center text-[16px] font-medium text-primary">
+          นัดเดิม : {formatThaiDateWeekdayShort(existingAppointment.date)} เวลา {existingAppointment.startTime} น.
+        </div>
+      )}
 
       {/* ===== เลือกวันที่ ===== */}
-      <h2 className="mt-8 text-[21px] font-semibold text-black">เลือกวันที่</h2>
+      <h2 className={`${isReschedule ? 'mt-4' : 'mt-8'} text-[21px] font-semibold text-black`}>เลือกวันที่</h2>
       {/* ปฏิทิน — กดวันที่แล้วตารางข้างล่างเปลี่ยนทันที (แบบ ก ที่ผู้ใช้เลือก 2026-10-03 แทนแถบ 4 วันใน Figma) */}
       <div className="mt-1">
         {selectedDate ? (
           <BookingCalendar
             days={days}
             selectedDate={selectedDate}
+            originalDate={isReschedule ? existingAppointment?.date : undefined}
             onSelect={(date) => {
               setErrorMessage('')
               setSelectedDate(date)
@@ -381,18 +350,34 @@ export default function LiffBooking() {
 
       {/* ===== ป๊อปอัป ===== */}
 
-      {/* ยืนยันการจอง (Figma 278:198) */}
+      {/* ยืนยันการจอง (Figma 278:198) / ยืนยันการเลื่อนนัด (Figma 279:338) */}
       {popup === 'confirm' && hold && (
         <Popup>
-          <PopupTitle>ยืนยันการจอง</PopupTitle>
-          <PopupText>{formatThaiDateWithWeekday(hold.date)}</PopupText>
-          {/* เวลานัดตัวใหญ่ที่สุดในการ์ด (กฎเวลาชุดที่ 2 — กันกดผิดเวลา) */}
-          <p className="text-[34px] leading-[1.2] font-bold text-primary">เวลา {hold.startTime} น.</p>
-          <PopupText>
-            ชื่อ : {me.profile.firstName} {me.profile.lastName}
-          </PopupText>
-          <PopupText>{`เพศ : ${GENDER_LABELS[me.profile.gender]}    อายุ : ${me.profile.age} ปี`}</PopupText>
-          <PopupText>เบอร์โทร : {me.profile.phone}</PopupText>
+          {isReschedule ? (
+            <>
+              <PopupTitle>ยืนยันการเลื่อนนัด</PopupTitle>
+              {/* นัดเดิม (ขีดฆ่าเวลา) → นัดใหม่ */}
+              <p className="w-full text-[16px] leading-[1.4] text-muted">
+                จาก : {formatThaiDateWeekdayShort(existingAppointment.date)} เวลา{' '}
+                <span className="line-through">{existingAppointment.startTime} น.</span>
+              </p>
+              <PopupText>เป็น : {formatThaiDateWeekdayShort(hold.date)}</PopupText>
+              {/* เวลาใหม่ตัวใหญ่ที่สุดในการ์ด (เหมือนป๊อปอัปจองคิว) */}
+              <PopupBigTime>เวลา {hold.startTime} น.</PopupBigTime>
+            </>
+          ) : (
+            <>
+              <PopupTitle>ยืนยันการจอง</PopupTitle>
+              <PopupText>{formatThaiDateWeekdayShort(hold.date)}</PopupText>
+              {/* เวลานัดตัวใหญ่ที่สุดในการ์ด (กฎเวลาชุดที่ 2 — กันกดผิดเวลา) */}
+              <PopupBigTime>เวลา {hold.startTime} น.</PopupBigTime>
+              <PopupText>
+                ชื่อ : {me.profile.firstName} {me.profile.lastName}
+              </PopupText>
+              <PopupText>{`เพศ : ${GENDER_LABELS[me.profile.gender]}    อายุ : ${me.profile.age} ปี`}</PopupText>
+              <PopupText>เบอร์โทร : {me.profile.phone}</PopupText>
+            </>
+          )}
           {/* เส้นตายยกเลิก/เลื่อน — ถ้าเลยตั้งแต่ตอนยืนยัน แสดงกล่องแดงแทน */}
           {cannotChangeAfterBooking ? (
             <div className="w-full rounded-[5px] border border-liff-red-border bg-liff-red-bg p-2.5 text-[15px] leading-[1.4] text-liff-red">
@@ -421,8 +406,10 @@ export default function LiffBooking() {
       {/* หมดเวลายืนยันการจอง (Figma 278:307) */}
       {popup === 'expired' && (
         <Popup>
-          <PopupTitle color="text-liff-red">หมดเวลายืนยันการจอง</PopupTitle>
+          <PopupTitle color="text-liff-red">{isReschedule ? 'หมดเวลายืนยันการเลื่อนนัด' : 'หมดเวลายืนยันการจอง'}</PopupTitle>
           <PopupText>คิว {expiredStartTime} น. ถูกปล่อยให้ผู้อื่นจองได้แล้ว</PopupText>
+          {/* หน้าเลื่อนนัด: บอกให้มั่นใจว่านัดเดิมยังอยู่ (UC5: hold ใหม่หมดเวลา → นัดเดิมไม่เปลี่ยน) */}
+          {isReschedule && <PopupText>นัดเดิมของคุณยังไม่เปลี่ยน</PopupText>}
           <PopupText>กรุณาเลือกเวลาใหม่อีกครั้ง</PopupText>
           <div className="pt-[10px]">
             <PopupButton onClick={handleExpiredOk}>ตกลง</PopupButton>
@@ -430,17 +417,17 @@ export default function LiffBooking() {
         </Popup>
       )}
 
-      {/* คุณมีนัดอยู่แล้ว (Figma 278:411) — ปุ่มพาไปหน้ายกเลิก/เลื่อนนัด (ทำขั้น 7.5) */}
+      {/* คุณมีนัดอยู่แล้ว (Figma 278:411) — [เลื่อนนัด] ไปหน้าเลื่อนนัดเลย / [ยกเลิกนัด] ไปหน้ายกเลิก/เลื่อนนัด (ขั้น 7.5) */}
       {/* กากบาท ✕ มุมขวาบน — ไม่มีใน Figma (ผู้ใช้สั่งเพิ่ม 2026-10-02): ปิดป๊อปอัปแล้วดูตารางเวลาต่อได้ */}
       {popup === 'hasAppointment' && existingAppointment && (
         <Popup onClose={() => setPopup(null)}>
           <PopupTitle>คุณมีนัดอยู่แล้ว</PopupTitle>
           <PopupText>
-            {formatThaiDateWithWeekday(existingAppointment.date)} เวลา {existingAppointment.startTime} น.
+            {formatThaiDateWeekdayShort(existingAppointment.date)} เวลา {existingAppointment.startTime} น.
           </PopupText>
           <PopupText>จองได้ครั้งละ 1 นัด หากต้องการเปลี่ยน กรุณาเลื่อนหรือยกเลิกนัดเดิม</PopupText>
           <div className="flex gap-4 pt-[10px]">
-            <PopupButton onClick={() => navigate('/liff/appointment')}>เลื่อนนัด</PopupButton>
+            <PopupButton onClick={() => navigate('/liff/reschedule')}>เลื่อนนัด</PopupButton>
             <PopupButton variant="red" onClick={() => navigate('/liff/appointment')}>
               ยกเลิกนัด
             </PopupButton>
@@ -449,12 +436,25 @@ export default function LiffBooking() {
       )}
 
       {/* จองสำเร็จ (ไม่มีใน Figma v2 — ออกแบบตามสไตล์ป๊อปอัปอื่น) */}
-      {popup === 'success' && bookedAppointment && (
+      {popup === 'success' && bookedAppointment && !isReschedule && (
         <Popup>
           <PopupTitle color="text-liff-success">จองสำเร็จ</PopupTitle>
-          <PopupText>{formatThaiDateWithWeekday(bookedAppointment.date)}</PopupText>
+          <PopupText>{formatThaiDateWeekdayShort(bookedAppointment.date)}</PopupText>
           <PopupText>เวลา {bookedAppointment.startTime} น.</PopupText>
           <PopupText>ระบบส่งข้อความยืนยันทาง LINE แล้ว</PopupText>
+          <div className="pt-[10px]">
+            <PopupButton onClick={handleSuccessClose}>ปิด</PopupButton>
+          </div>
+        </Popup>
+      )}
+
+      {/* เลื่อนนัดสำเร็จ (ไม่มีใน Figma — ขั้น 7.5 ตามตัวอย่างจอ ⑧ ที่ผู้ใช้ดูแล้ว) */}
+      {popup === 'success' && bookedAppointment && isReschedule && (
+        <Popup>
+          <PopupTitle color="text-liff-success">เลื่อนนัดสำเร็จ</PopupTitle>
+          <PopupText>นัดใหม่ : {formatThaiDateWeekdayShort(bookedAppointment.date)}</PopupText>
+          <PopupBigTime>เวลา {bookedAppointment.startTime} น.</PopupBigTime>
+          <p className="w-full text-[16px] leading-[1.4] text-[#555555]">ระบบส่งข้อความยืนยันการเลื่อนนัดทาง LINE แล้ว</p>
           <div className="pt-[10px]">
             <PopupButton onClick={handleSuccessClose}>ปิด</PopupButton>
           </div>

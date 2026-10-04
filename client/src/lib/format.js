@@ -76,9 +76,15 @@ export function formatThaiDayChip(dateString) {
   return `${THAI_WEEKDAYS_SHORT[date.getDay()]} ${date.getDate()} ${THAI_MONTHS_SHORT[date.getMonth()]}`
 }
 
-// '2026-10-03' → 'วันเสาร์ที่ 3 ต.ค. 2569' (ป๊อปอัปหน้าจองคิว)
-export function formatThaiDateWithWeekday(dateString) {
+// '2026-10-10' → 'เสาร์ 10 ต.ค. 2569' (หน้าจองคิว / ยกเลิก / เลื่อนนัด — แบบ Figma 279:446 / 279:240 ใช้ทุกหน้า ผู้ใช้เลือก 2026-10-04)
+export function formatThaiDateWeekdayShort(dateString) {
   const date = toDateObject(dateString)
   const buddhistYear = date.getFullYear() + 543 // ปี ค.ศ. → พ.ศ.
-  return `วัน${THAI_WEEKDAYS_LONG[date.getDay()]}ที่ ${date.getDate()} ${THAI_MONTHS_SHORT[date.getMonth()]} ${buddhistYear}`
+  return `${THAI_WEEKDAYS_LONG[date.getDay()]} ${date.getDate()} ${THAI_MONTHS_SHORT[date.getMonth()]} ${buddhistYear}`
+}
+
+// เวลา ISO เช่น '2026-10-03T07:15:00+07:00' → '07:15' (ตัดเอาชั่วโมง:นาที เวลาไทย)
+// ย้ายมาจาก LiffBooking.jsx ในขั้น 7.5 เพื่อใช้ร่วมกับหน้ายกเลิก/เลื่อนนัด
+export function timeFromIso(iso) {
+  return iso.slice(11, 16)
 }

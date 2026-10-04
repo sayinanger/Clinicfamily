@@ -143,7 +143,7 @@ export function getSlots(date) {
 }
 
 // U6 — ถือคิวไว้ 5 นาที (กดปุ่ม [จองคิว]) → { hold: { slotId, date, startTime, holdExpiresAt } }
-// purpose: 'book' = จองใหม่, 'reschedule' = เลื่อนนัด (ใช้ขั้น 7.5)
+// purpose: 'book' = จองใหม่, 'reschedule' = เลื่อนนัด (หน้าเลื่อนนัด /liff/reschedule)
 export function createHold(slotId, purpose = 'book') {
   return apiRequest('/api/holds', { method: 'POST', body: { slotId, purpose } })
 }
@@ -161,6 +161,18 @@ export function getMyAppointment() {
 // U9 — ยืนยันการจอง (กด [ยืนยัน] ในป๊อปอัป) → { appointment: {...} }
 export function createAppointment(slotId) {
   return apiRequest('/api/appointments', { method: 'POST', body: { slotId } })
+}
+
+// U10 — ยกเลิกนัดของฉัน → { appointment: { ...status: 'cancelled' } }
+// เลยเส้นตาย (15 นาทีก่อนนัด) → error code TOO_LATE_TO_CHANGE
+export function cancelAppointment() {
+  return apiRequest('/api/me/appointment/cancel', { method: 'POST' })
+}
+
+// U11 — ยืนยันการเลื่อนนัด (ต้องถือคิวใหม่ไว้ด้วย createHold(slotId, 'reschedule') ก่อน)
+// → { appointment: { ...เวลาใหม่ }, previous: { date, startTime } }
+export function rescheduleAppointment(slotId) {
+  return apiRequest('/api/me/appointment/reschedule', { method: 'POST', body: { slotId } })
 }
 
 // "ตอนนี้" (มิลลิวินาที) ที่หน้าเว็บใช้นับถอยหลังเวลาถือคิว
