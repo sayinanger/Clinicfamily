@@ -37,6 +37,12 @@ export async function initLiff() {
   }
 }
 
+// ปิดหน้าต่าง LIFF ได้ไหม — true = เปิดอยู่ในแอป LINE (โหมดจริง)
+// false = โหมดข้อมูลปลอม หรือเปิดในเบราว์เซอร์ธรรมดา (เช่น Chrome/Safari) ซึ่งหน้าเว็บสั่งปิดแท็บตัวเองไม่ได้
+export function canCloseLiff() {
+  return !USE_MOCK && liff.isInClient()
+}
+
 // ปิดหน้าต่าง LIFF (ใช้หลังทำรายการเสร็จ)
 export function closeLiff() {
   if (liff.isInClient()) liff.closeWindow()

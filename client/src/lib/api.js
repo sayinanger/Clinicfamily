@@ -14,16 +14,33 @@ export function setLineIdToken(token) {
   lineIdToken = token
 }
 
+// API ของ staff ที่ถ้าได้ 401 แปลว่า session หมดอายุ → ต้องพากลับหน้า login
+// ยกเว้น login (401 = รหัสผิด) และ /api/admin/me (AdminLayout จัดการเอง)
+function isStaffSessionApi(path) {
+  return path.startsWith('/api/admin/') && !path.startsWith('/api/admin/login') && !path.startsWith('/api/admin/me')
+}
+
 // ฟังก์ชันกลางสำหรับเรียก API
 // ตัวอย่าง: await apiRequest('/api/admin/login', { method: 'POST', body: { username, password } })
 // ถ้าผิดพลาดจะ throw error ที่มี .message (ข้อความไทย), .code (รหัส เช่น SLOT_TAKEN), .status (HTTP)
-export async function apiRequest(path, { method = 'GET', body } = {}) {
-  // โหมดข้อมูลปลอม: ไม่ต่อ server เลย
-  if (USE_MOCK) {
-    return mockRequest(method, path, body)
+// staff ใช้งานอยู่แล้ว session หมดอายุ (401) → พากลับหน้า login ทันที ที่นี่ที่เดียว (ผู้ใช้เลือก 2026-10-06)
+export async function apiRequest(path, options = {}) {
+  try {
+    // โหมดข้อมูลปลอม: ไม่ต่อ server เลย
+    if (USE_MOCK) {
+      return await mockRequest(options.method || 'GET', path, options.body)
+    }
+    return await serverRequest(path, options)
+  } catch (error) {
+    if (error.status === 401 && isStaffSessionApi(path)) {
+      window.location.assign('/admin/login') // โหลดหน้า login ใหม่ทั้งหน้า
+    }
+    throw error
   }
+}
 
-  // โหมดจริง: ส่งคำขอไปที่ server
+// ส่งคำขอไปที่ server จริง
+async function serverRequest(path, { method = 'GET', body } = {}) {
   const headers = { 'Content-Type': 'application/json' }
   if (lineIdToken) {
     headers.Authorization = `Bearer ${lineIdToken}`

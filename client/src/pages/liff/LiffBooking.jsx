@@ -11,7 +11,7 @@ import {
   rescheduleAppointment,
   getNowMs,
 } from '../../lib/api.js'
-import { closeLiff } from '../../lib/liff.js'
+import { canCloseLiff, closeLiff } from '../../lib/liff.js'
 import { formatThaiDateWeekdayShort, timeFromIso } from '../../lib/format.js'
 import BookingCalendar from '../../components/BookingCalendar.jsx'
 import { Popup, PopupTitle, PopupText, PopupBigTime, PopupButton } from '../../components/Popup.jsx'
@@ -216,11 +216,14 @@ export default function LiffBooking({ mode = 'book' }) {
 
   // ป๊อปอัปจองสำเร็จ / เลื่อนนัดสำเร็จ: กด [ปิด]
   // ในแอป LINE = ปิดหน้าต่าง LIFF / ทดสอบบนเบราว์เซอร์ (ข้อมูลปลอม) = กลับเมนูทดสอบ
+  // เปิดในเบราว์เซอร์ธรรมดา (ปิดแท็บเองไม่ได้) = ไปหน้ายกเลิก/เลื่อนนัด ให้เห็นนัดล่าสุดของตัวเอง (ผู้ใช้เลือก 2026-10-06)
   function handleSuccessClose() {
     if (USE_MOCK) {
       navigate('/liff')
-    } else {
+    } else if (canCloseLiff()) {
       closeLiff()
+    } else {
+      navigate('/liff/appointment', { replace: true })
     }
   }
 

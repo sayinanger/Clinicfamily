@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { getAdminAppointments, markNoShow, undoNoShow } from '../../lib/api.js'
+import { useEffect, useRef, useState } from 'react'
+import { getAdminAppointments, markNoShow, undoNoShow, getNowMs } from '../../lib/api.js'
 import { formatThaiDateShort } from '../../lib/format.js'
 import DatePickerBox from '../../components/DatePickerBox.jsx'
 
@@ -26,20 +26,30 @@ export default function AdminAppointments() {
   // id ของนัดที่กำลังกดปุ่มอยู่ (กันกดซ้ำ) — null = ไม่มี
   const [busyId, setBusyId] = useState(null)
   // เวลาปัจจุบัน อัปเดตทุก 10 วินาที → ปุ่ม [แก้คืน] เปลี่ยนเป็นสีเทาเมื่อครบ 5 นาที
-  const [now, setNow] = useState(Date.now())
+  // ใช้ getNowMs() (ไม่ใช้ Date.now() ตรง ๆ) เพื่อให้ตรงกับเวลาของ server ตอนเดโมที่ตั้ง DEMO_NOW
+  const [now, setNow] = useState(getNowMs())
+  // วันที่ที่กำลังดูอยู่ "ตอนนี้" — ใช้เช็กตอนโหลดเงียบ ๆ ว่าผู้ใช้เปลี่ยนวันไปแล้วหรือยัง
+  // (useRef = ตัวแปรที่จำค่าไว้ได้ แต่เปลี่ยนแล้วไม่ทำให้หน้าวาดใหม่)
+  const currentDateRef = useRef('')
 
   // โหลดรายการนัด — selectedDate ว่าง = ให้ server เลือกวันเปิดทำการถัดไป
-  async function loadAppointments(selectedDate) {
-    setLoading(true)
-    setErrorMessage('')
+  // silent = true → โหลดเงียบ ๆ (ไม่ขึ้น "กำลังโหลด..." ไม่ลบข้อความผิดพลาดเดิม) ใช้ตอนโหลดใหม่เองทุก 30 วินาที
+  async function loadAppointments(selectedDate, silent = false) {
+    if (!silent) {
+      setLoading(true)
+      setErrorMessage('')
+    }
     try {
       const data = await getAdminAppointments(selectedDate)
+      // โหลดเงียบ ๆ เสร็จช้า แต่ผู้ใช้เปลี่ยนไปดูวันอื่นแล้ว → ทิ้งข้อมูลเก่า (ไม่งั้นตารางจะกลับไปเป็นวันเดิม)
+      if (silent && data.date !== currentDateRef.current) return
+      currentDateRef.current = data.date
       setDate(data.date)
       setAppointments(data.appointments)
     } catch (error) {
       setErrorMessage(error.message)
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
@@ -50,9 +60,18 @@ export default function AdminAppointments() {
 
   // นาฬิกาเดินทุก 10 วินาที (หยุดเมื่อออกจากหน้า)
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 10000)
+    const timer = setInterval(() => setNow(getNowMs()), 10000)
     return () => clearInterval(timer)
   }, [])
+
+  // โหลดรายการใหม่เองทุก 30 วินาที (ผู้ใช้เลือก 2026-10-06)
+  // → ถึงเวลานัดแล้วปุ่ม [ไม่มา] เปลี่ยนเป็นกรอบแดงเอง + เห็นนัดใหม่/นัดที่ถูกยกเลิกโดยไม่ต้องเปลี่ยนวันที่
+  // เริ่มนับใหม่ทุกครั้งที่เปลี่ยนวันที่ และหยุดเมื่อออกจากหน้า
+  useEffect(() => {
+    if (!date) return
+    const timer = setInterval(() => loadAppointments(date, true), 30000)
+    return () => clearInterval(timer)
+  }, [date])
 
   // กด [ไม่มา] หรือ [แก้คืน] — action = markNoShow หรือ undoNoShow
   async function handleAction(appointmentId, action) {

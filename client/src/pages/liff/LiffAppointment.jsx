@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useOutletContext } from 'react-router-dom'
 import { USE_MOCK, getMyAppointment, cancelAppointment } from '../../lib/api.js'
-import { closeLiff } from '../../lib/liff.js'
+import { canCloseLiff, closeLiff } from '../../lib/liff.js'
 import { formatPhone, formatThaiDateWeekdayShort, timeFromIso } from '../../lib/format.js'
 import { Popup, PopupTitle, PopupText, PopupBigTime, PopupButton } from '../../components/Popup.jsx'
 
@@ -45,6 +45,7 @@ function ChoiceOption({ label, selected, disabled, onClick }) {
 }
 
 // ออกจากหน้า: ในแอป LINE = ปิดหน้าต่าง LIFF / ทดสอบบนเบราว์เซอร์ (ข้อมูลปลอม) = กลับเมนูทดสอบ
+// (เปิดในเบราว์เซอร์ธรรมดา ปิดแท็บเองไม่ได้ → หน้านี้ซ่อนปุ่ม [ปิด] ด้านล่าง และป๊อปอัปยกเลิกแล้วใช้ handleCancelledClose แทน)
 function useLeavePage() {
   const navigate = useNavigate()
   return () => {
@@ -124,6 +125,20 @@ export default function LiffAppointment() {
     }
   }
 
+  // ป๊อปอัปยกเลิกแล้ว: กด [ปิด]
+  // ปิดหน้าต่างได้ / ข้อมูลปลอม = ออกจากหน้า (เหมือนเดิม)
+  // เปิดในเบราว์เซอร์ธรรมดา = ปิดป๊อปอัปแล้วโหลดนัดใหม่ → เห็น "คุณยังไม่มีนัด" (ผู้ใช้เลือก 2026-10-06)
+  function handleCancelledClose() {
+    if (USE_MOCK || canCloseLiff()) {
+      leavePage()
+      return
+    }
+    setPopup(null)
+    setCancelledAppointment(null)
+    setChoice('')
+    loadAppointment()
+  }
+
   if (loading) {
     return <p className="pt-12 text-center text-[18px] text-muted">กำลังโหลด...</p>
   }
@@ -137,7 +152,7 @@ export default function LiffAppointment() {
       </PopupText>
       <p className="w-full text-[16px] leading-[1.4] text-[#555555]">ระบบส่งข้อความยืนยันการยกเลิกทาง LINE แล้ว</p>
       <div className="pt-[10px]">
-        <PopupButton onClick={leavePage}>ปิด</PopupButton>
+        <PopupButton onClick={handleCancelledClose}>ปิด</PopupButton>
       </div>
     </Popup>
   )
@@ -236,13 +251,16 @@ export default function LiffAppointment() {
         >
           ยืนยัน
         </button>
-        <button
-          type="button"
-          onClick={leavePage}
-          className="min-w-[110px] rounded-[6px] border-[1.5px] border-[#CCCCCC] bg-white px-[22px] py-[8px] text-[18px] font-semibold text-[#555555]"
-        >
-          ปิด
-        </button>
+        {/* ซ่อนเมื่อเปิดในเบราว์เซอร์ธรรมดา เพราะสั่งปิดแท็บไม่ได้ (ผู้ใช้เลือก 2026-10-06) */}
+        {(USE_MOCK || canCloseLiff()) && (
+          <button
+            type="button"
+            onClick={leavePage}
+            className="min-w-[110px] rounded-[6px] border-[1.5px] border-[#CCCCCC] bg-white px-[22px] py-[8px] text-[18px] font-semibold text-[#555555]"
+          >
+            ปิด
+          </button>
+        )}
       </div>
 
       {/* ===== ป๊อปอัป ===== */}

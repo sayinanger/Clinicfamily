@@ -62,8 +62,9 @@ function isBeyondBookingRange(dateString) {
 }
 
 // เวลาหมดสิทธิ์แก้คืน = ตอนนี้ + 5 นาที ในรูปแบบ ISO เวลาไทย เช่น '2026-10-03T08:10:00+07:00'
+// ใช้นาฬิกาจำลอง mockNowMs() ให้ตรงกับ getNowMs() ที่หน้ารายการนัดใช้เทียบ (ข้อ 1 แก้ 2026-10-06)
 function fiveMinutesFromNowIso() {
-  const bangkokMs = Date.now() + 5 * 60 * 1000 + 7 * 60 * 60 * 1000
+  const bangkokMs = mockNowMs() + 5 * 60 * 1000 + 7 * 60 * 60 * 1000
   return new Date(bangkokMs).toISOString().slice(0, 19) + '+07:00'
 }
 

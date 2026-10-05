@@ -1,4 +1,4 @@
-import { Link, useOutletContext } from 'react-router-dom'
+import { Link, Navigate, useOutletContext } from 'react-router-dom'
 import { USE_MOCK, getNowMs } from '../../lib/api.js'
 import { MOCK_PATIENT_SCENARIOS, getMockPatientScenario } from '../../lib/mock.js'
 import { formatThaiDayChip } from '../../lib/format.js'
@@ -19,12 +19,18 @@ const MENU_ITEMS = [
   { label: 'ยกเลิก/เลื่อนนัด', path: '/liff/appointment' },
 ]
 
-// หน้าเมนูทดสอบ (/liff) — ใช้ตอนพัฒนาบนเบราว์เซอร์เท่านั้น
+// หน้าเมนูทดสอบ (/liff) — ใช้ตอนพัฒนาบนเบราว์เซอร์เท่านั้น (โหมดข้อมูลปลอม)
 // ใน LINE จริง ปุ่ม Rich Menu จะเปิดแต่ละหน้าโดยตรง (เช่น /liff/profile) ผู้ป่วยจึงไม่เห็นหน้านี้
 // หน้านี้ไม่ต้องยินยอม PDPA ก่อน (ตั้งไว้ใน LiffLayout) → กดเมนูแล้วจะเจอหน้า PDPA เหมือนของจริง
 export default function LiffHome() {
   const { lineUser, me } = useOutletContext()
   const currentScenario = USE_MOCK ? getMockPatientScenario() : null
+
+  // โหมดจริง: ผู้ป่วยไม่ควรเห็นเมนูทดสอบ → พาไปหน้าจองคิวแทน (ยังไม่กรอกประวัติ หน้าจองคิวจะพาไปกรอกก่อนเอง)
+  // เช่น กดยินยอม PDPA โดยไม่มีหน้าถัดไป (?next=) หน้า PDPA จะพามาที่ /liff แล้วมาต่อที่หน้าจองคิว
+  if (!USE_MOCK) {
+    return <Navigate to="/liff/booking" replace />
+  }
 
   return (
     <div className="px-6 pt-12 pb-10">

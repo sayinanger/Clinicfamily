@@ -23,13 +23,21 @@ const menus = [
 export default function AdminLayout() {
   // staff ที่ login อยู่ — null = ยังเช็กไม่เสร็จ (ยังไม่แสดงหน้า)
   const [staff, setStaff] = useState(null)
+  // ข้อความผิดพลาดที่ไม่ใช่ "ยังไม่ login" เช่น server ไม่ได้เปิด (ว่าง = ไม่มี)
+  const [errorMessage, setErrorMessage] = useState('')
   const navigate = useNavigate()
 
   // ทำครั้งเดียวตอนเปิดหน้า: เช็กว่า login อยู่ไหม
   useEffect(() => {
     getAdminMe()
       .then((data) => setStaff(data.staff))
-      .catch(() => navigate('/admin/login', { replace: true })) // ไม่ได้ login → ไปหน้า login
+      .catch((error) => {
+        if (error.status === 401) {
+          navigate('/admin/login', { replace: true }) // ไม่ได้ login → ไปหน้า login
+        } else {
+          setErrorMessage(error.message) // ปัญหาอื่น (เช่น server ไม่ได้เปิด) → ข้อความแดงกลางจอ (ผู้ใช้เลือก 2026-10-06)
+        }
+      })
   }, [navigate])
 
   // กด "ออกจากระบบ" → ลบ session แล้วกลับหน้า login ทันที
@@ -39,6 +47,15 @@ export default function AdminLayout() {
     } finally {
       navigate('/admin/login', { replace: true })
     }
+  }
+
+  // เช็ก login ไม่ได้เพราะปัญหาอื่น → ข้อความแดงกลางจอ
+  if (errorMessage) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-staff-card p-6 text-center text-staff-red">
+        {errorMessage}
+      </div>
+    )
   }
 
   // ระหว่างรอเช็ก login → แสดงพื้นว่าง ๆ (ไม่ให้เห็นข้อมูลก่อนรู้ว่า login แล้ว)
