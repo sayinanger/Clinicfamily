@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch --env-file-if-exists=.env index.js",
-    "start": "node --env-file-if-exists=.env index.js"
+    "start": "node --env-file-if-exists=.env index.js",
+    "db:reset": "node --env-file-if-exists=.env db/reset.js"
   },
   "dependencies": {
     "express": "^5.1.0",
