@@ -1,5 +1,6 @@
 // จุดเริ่มต้นของ server (Express)
 // รันด้วย npm run dev (ในโฟลเดอร์ server/) → เปิดที่ http://localhost:3000
+// ค่าตั้งใน server/.env ถูกอ่านเข้า process.env ด้วย --env-file-if-exists (ดู scripts ใน package.json)
 // หน้าเว็บ (Vite พอร์ต 5173) ส่งต่อทุกคำขอ /api มาที่นี่ (ดู client/vite.config.js)
 
 import express from 'express'
@@ -7,8 +8,10 @@ import healthRouter from './routes/health.js'
 
 const app = express()
 
-// พอร์ตที่ server เปิด — ต้องตรงกับ Vite proxy ใน client/vite.config.js
-const PORT = 3000
+// พอร์ตที่ server เปิด — อ่านจาก PORT ใน .env ถ้าไม่มีใช้ 3000
+// (ค่าจาก .env เป็นข้อความเสมอ จึงแปลงเป็นตัวเลขด้วย Number · || = ถ้าทางซ้ายไม่มีค่าให้ใช้ทางขวา)
+// ต้องตรงกับ Vite proxy ใน client/vite.config.js
+const PORT = Number(process.env.PORT) || 3000
 
 // ให้อ่าน body ที่ส่งมาเป็น JSON ได้ผ่าน req.body (เช่น username/password ตอน login)
 app.use(express.json())
