@@ -49,8 +49,12 @@
 - **ผู้ป่วย (LIFF):** ทุก API ที่ขึ้นต้น `/api/me`, `/api/slots`, `/api/booking-days`, `/api/holds`, `/api/appointments` ต้องส่ง header
   `Authorization: Bearer <LINE ID token>` (ได้จาก `liff.getIDToken()`) → server ส่ง token ไปตรวจกับ LINE แล้วได้ `line_user_id` ของจริง
   (ไม่ให้หน้าเว็บส่ง lineUserId มาเอง เพราะปลอมได้)
-- **Staff:** login แล้ว server ตั้ง session cookie — ทุก API `/api/admin/...` (ยกเว้น login) ต้องมี cookie นี้
+- **Staff:** login แล้ว server ตั้ง session cookie (`clinic_session`, httpOnly, อายุ 8 ชม.นับจาก login) — ทุก API `/api/admin/...` (ยกเว้น login, logout) ต้องมี cookie นี้
 - **โหมด mock:** ไม่มีการตรวจจริง — ใช้ผู้ป่วยจำลอง 1 คน (เลือกสถานการณ์ได้ด้วย `?user=new` / `pdpa` / `profile` / `booked` / `rush` / `late` ท้าย URL หน้า `/liff` — `booked` = มีนัดอยู่แล้ว, `rush` = จองกระชั้นเช้าวันนัด, `late` = มีนัดแต่เลยเวลาแก้ไข) และ staff login ด้วย `staff` / `1234`
+
+**เวลาของ server** (เพิ่มขั้น F, 2026-10-12)
+- ทุกคำตอบมี header `X-Server-Now` = เวลาที่ server ใช้ตัดสินกฎ (เวลาไทย ISO เช่น `2026-10-17T07:12:30.123+07:00`) — ถ้าตั้ง `DEMO_NOW` จะเป็นเวลาเดโม
+- หน้าเว็บ (`getNowMs()` ใน `api.js`) จำส่วนต่างกับเวลาเครื่องทุกครั้งที่เรียก API → ตัวนับถอยหลัง/กล่องเตือนตรงกับ server · โหมด mock ใช้นาฬิกาจำลองเหมือนเดิม
 
 **ลำดับการเช็กฝั่งผู้ป่วย** (server เช็กทุกครั้ง)
 1. ตัวตน LINE → ไม่ผ่าน `401 UNAUTHORIZED`

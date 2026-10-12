@@ -39,6 +39,10 @@ export async function apiRequest(path, options = {}) {
   }
 }
 
+// ส่วนต่างเวลา: เวลา server − เวลาเครื่องนี้ (มิลลิวินาที) — ใช้ใน getNowMs()
+// server ติดเวลาของตัวเองมาใน header X-Server-Now ทุกคำตอบ → อัปเดตทุกครั้งที่เรียก API
+let serverOffsetMs = 0
+
 // ส่งคำขอไปที่ server จริง
 async function serverRequest(path, { method = 'GET', body } = {}) {
   const headers = { 'Content-Type': 'application/json' }
@@ -52,6 +56,12 @@ async function serverRequest(path, { method = 'GET', body } = {}) {
     credentials: 'include', // ส่ง session cookie ไปด้วย (ใช้กับ staff)
     body: body ? JSON.stringify(body) : undefined,
   })
+
+  // จำส่วนต่างเวลากับ server (ถ้าตั้ง DEMO_NOW ที่ server ตัวนับถอยหลังจะตามเวลาเดโม)
+  const serverNow = Date.parse(response.headers.get('X-Server-Now') || '')
+  if (!Number.isNaN(serverNow)) {
+    serverOffsetMs = serverNow - Date.now()
+  }
 
   const data = await response.json().catch(() => null)
   if (!response.ok) {
@@ -194,7 +204,7 @@ export function rescheduleAppointment(slotId) {
 
 // "ตอนนี้" (มิลลิวินาที) ที่หน้าเว็บใช้นับถอยหลังเวลาถือคิว
 // โหมดข้อมูลปลอม = นาฬิกาจำลองของ mock.js (เริ่มที่วันเปิดทำการถัดไป 07:12)
-// โหมดจริง = นาฬิกาเครื่อง (ถ้า server ใช้ DEMO_NOW ต้องปรับตรงนี้ตอนสัปดาห์ 3)
+// โหมดจริง = นาฬิกาเครื่อง + ส่วนต่างกับ server (จาก header X-Server-Now) → ตรงกับเวลาที่ server ใช้ตัดสินกฎ
 export function getNowMs() {
-  return USE_MOCK ? mockNowMs() : Date.now()
+  return USE_MOCK ? mockNowMs() : Date.now() + serverOffsetMs
 }

@@ -11,6 +11,7 @@
 
 import bcrypt from 'bcryptjs'
 import { pool } from '../db.js'
+import { now as clockNow } from '../lib/clock.js'
 
 // ===================================================================
 // 1) ค่าตั้งต้น
@@ -63,9 +64,9 @@ const futureDayPatterns = [
 // 2) ตัวช่วยเรื่องวันที่ — คิดเป็นวันที่ไทยแบบข้อความ 'YYYY-MM-DD'
 // ===================================================================
 
-// เวลาปัจจุบัน — ขั้น F จะเปลี่ยนไปเรียก now() จาก server/lib/clock.js (รองรับ DEMO_NOW)
+// เวลาปัจจุบัน — จาก server/lib/clock.js (ตั้ง DEMO_MODE=true + DEMO_NOW แล้ว seed สร้างข้อมูลรอบเวลาเดโม)
 function getNow() {
-  return new Date()
+  return clockNow()
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000

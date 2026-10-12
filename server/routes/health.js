@@ -2,19 +2,21 @@
 
 import { Router } from 'express'
 import { query } from '../db.js'
+import { now, toThaiIso, isDemoTime } from '../lib/clock.js'
 
 const router = Router()
 
-// GET /api/health → ตอบ { "ok": true, "db": "เวลาปัจจุบันจาก Supabase" }
-// req = คำขอที่เข้ามา, res = คำตอบที่จะส่งกลับ
-// async + await = รอฐานข้อมูลตอบก่อนค่อยทำบรรทัดถัดไป
+// GET /api/health → { ok, db, now, demo }
+//   db   = เวลาจาก Supabase (UTC ลงท้าย Z) — ได้คำตอบแปลว่าต่อฐานข้อมูลติด
+//   now  = เวลาที่ระบบใช้ตัดสินกฎ (จาก clock.js, เวลาไทย) — ตั้ง DEMO_NOW แล้วจะเห็นเวลาเดโมตรงนี้
+//   demo = true เมื่อกำลังใช้เวลาเดโม
+// req = คำขอที่เข้ามา, res = คำตอบที่จะส่งกลับ · async + await = รอฐานข้อมูลตอบก่อนค่อยทำบรรทัดถัดไป
 router.get('/health', async (req, res) => {
-  // ถามเวลาจากฐานข้อมูล — ถ้าได้คำตอบแปลว่าต่อ Supabase ติด
   // (ถ้าต่อไม่ติด Express 5 จะส่ง error ไปที่ตัวจัดการกลางใน index.js → ตอบ 500 SERVER_ERROR + แสดงสาเหตุใน Terminal)
+  // SELECT now() ของฐานข้อมูลใช้ได้ตรงนี้ เพราะเป็นแค่การเช็กการเชื่อมต่อ ไม่ใช่กฎเวลา
   const result = await query('SELECT now() AS db_time')
 
-  // db_time เป็นเวลาแบบสากล (UTC ลงท้าย Z) เช่น "2026-10-11T18:40:00.000Z" = 01:40 น. เวลาไทย
-  res.json({ ok: true, db: result.rows[0].db_time })
+  res.json({ ok: true, db: result.rows[0].db_time, now: toThaiIso(now()), demo: isDemoTime() })
 })
 
 export default router
