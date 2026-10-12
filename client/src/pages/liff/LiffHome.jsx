@@ -1,5 +1,5 @@
 import { Link, Navigate, useOutletContext } from 'react-router-dom'
-import { USE_MOCK, getNowMs } from '../../lib/api.js'
+import { USE_MOCK_LIFF, getNowMs } from '../../lib/api.js'
 import { MOCK_PATIENT_SCENARIOS, getMockPatientScenario } from '../../lib/mock.js'
 import { formatThaiDayChip } from '../../lib/format.js'
 
@@ -24,11 +24,11 @@ const MENU_ITEMS = [
 // หน้านี้ไม่ต้องยินยอม PDPA ก่อน (ตั้งไว้ใน LiffLayout) → กดเมนูแล้วจะเจอหน้า PDPA เหมือนของจริง
 export default function LiffHome() {
   const { lineUser, me } = useOutletContext()
-  const currentScenario = USE_MOCK ? getMockPatientScenario() : null
+  const currentScenario = USE_MOCK_LIFF ? getMockPatientScenario() : null
 
   // โหมดจริง: ผู้ป่วยไม่ควรเห็นเมนูทดสอบ → พาไปหน้าจองคิวแทน (ยังไม่กรอกประวัติ หน้าจองคิวจะพาไปกรอกก่อนเอง)
   // เช่น กดยินยอม PDPA โดยไม่มีหน้าถัดไป (?next=) หน้า PDPA จะพามาที่ /liff แล้วมาต่อที่หน้าจองคิว
-  if (!USE_MOCK) {
+  if (!USE_MOCK_LIFF) {
     return <Navigate to="/liff/booking" replace />
   }
 
@@ -45,7 +45,7 @@ export default function LiffHome() {
           <p>กรอกประวัติ: {me.profileCompleted ? '✔ แล้ว' : '✘ ยัง'}</p>
           {/* นาฬิกาจำลอง — เปลี่ยนตามผู้ใช้ทดสอบ (ดูตารางในคู่มือการใช้งาน) */}
           {/*แสดงบรรทัดนี้เฉพาะตอนใช้ข้อมูลปลอม พอต่อ server จริงแล้วบรรทัดนี้จะหายไปเอง เวลาที่แสดงคือเวลาตอนเปิดหน้า ถ้าอยากเห็นเวลาล่าสุดให้รีเฟรชหน้า*/}
-          {USE_MOCK && <p>นาฬิกาจำลอง: {mockClockText()}</p>}
+          {USE_MOCK_LIFF && <p>นาฬิกาจำลอง: {mockClockText()}</p>}
         </div>
 
         {/* ปุ่มเมนู */}
@@ -72,7 +72,7 @@ export default function LiffHome() {
 
         {/* สลับผู้ใช้ทดสอบ — มีเฉพาะโหมดข้อมูลปลอม */}
         {/* ใช้ <a href> (โหลดหน้าใหม่ทั้งหน้า) ไม่ใช้ <Link> เพราะต้องให้ LiffLayout เริ่มผู้ใช้ใหม่ */}
-        {USE_MOCK && (
+        {USE_MOCK_LIFF && (
           <div className="mt-10">
             <h2 className="text-[20px] font-semibold text-black">สลับผู้ใช้ทดสอบ</h2>
             <p className="mt-1 text-[15px] text-muted">กดแล้วเริ่มใหม่ตามสถานการณ์ (ข้อมูลที่กรอกไว้จะหาย)</p>

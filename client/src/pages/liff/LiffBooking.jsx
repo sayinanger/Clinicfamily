@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Navigate, useNavigate, useOutletContext } from 'react-router-dom'
 import {
-  USE_MOCK,
+  USE_MOCK_LIFF,
   getBookingDays,
   getSlots,
   createHold,
@@ -218,7 +218,7 @@ export default function LiffBooking({ mode = 'book' }) {
   // ในแอป LINE = ปิดหน้าต่าง LIFF / ทดสอบบนเบราว์เซอร์ (ข้อมูลปลอม) = กลับเมนูทดสอบ
   // เปิดในเบราว์เซอร์ธรรมดา (ปิดแท็บเองไม่ได้) = ไปหน้ายกเลิก/เลื่อนนัด ให้เห็นนัดล่าสุดของตัวเอง (ผู้ใช้เลือก 2026-10-06)
   function handleSuccessClose() {
-    if (USE_MOCK) {
+    if (USE_MOCK_LIFF) {
       navigate('/liff')
     } else if (canCloseLiff()) {
       closeLiff()

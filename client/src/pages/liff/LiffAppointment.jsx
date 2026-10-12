@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useOutletContext } from 'react-router-dom'
-import { USE_MOCK, getMyAppointment, cancelAppointment } from '../../lib/api.js'
+import { USE_MOCK_LIFF, getMyAppointment, cancelAppointment } from '../../lib/api.js'
 import { canCloseLiff, closeLiff } from '../../lib/liff.js'
 import { formatPhone, formatThaiDateWeekdayShort, timeFromIso } from '../../lib/format.js'
 import { Popup, PopupTitle, PopupText, PopupBigTime, PopupButton } from '../../components/Popup.jsx'
@@ -49,7 +49,7 @@ function ChoiceOption({ label, selected, disabled, onClick }) {
 function useLeavePage() {
   const navigate = useNavigate()
   return () => {
-    if (USE_MOCK) {
+    if (USE_MOCK_LIFF) {
       navigate('/liff')
     } else {
       closeLiff()
@@ -129,7 +129,7 @@ export default function LiffAppointment() {
   // ปิดหน้าต่างได้ / ข้อมูลปลอม = ออกจากหน้า (เหมือนเดิม)
   // เปิดในเบราว์เซอร์ธรรมดา = ปิดป๊อปอัปแล้วโหลดนัดใหม่ → เห็น "คุณยังไม่มีนัด" (ผู้ใช้เลือก 2026-10-06)
   function handleCancelledClose() {
-    if (USE_MOCK || canCloseLiff()) {
+    if (USE_MOCK_LIFF || canCloseLiff()) {
       leavePage()
       return
     }
@@ -252,7 +252,7 @@ export default function LiffAppointment() {
           ยืนยัน
         </button>
         {/* ซ่อนเมื่อเปิดในเบราว์เซอร์ธรรมดา เพราะสั่งปิดแท็บไม่ได้ (ผู้ใช้เลือก 2026-10-06) */}
-        {(USE_MOCK || canCloseLiff()) && (
+        {(USE_MOCK_LIFF || canCloseLiff()) && (
           <button
             type="button"
             onClick={leavePage}

@@ -1,5 +1,5 @@
 import liff from '@line/liff'
-import { USE_MOCK, setLineIdToken } from './api.js'
+import { USE_MOCK_LIFF, setLineIdToken } from './api.js'
 import { startMockPatient } from './mock.js'
 
 // เริ่มต้น LIFF และคืนค่าข้อมูลโปรไฟล์ LINE { lineUserId, displayName, pictureUrl }
@@ -7,7 +7,7 @@ import { startMockPatient } from './mock.js'
 export async function initLiff() {
   // โหมดข้อมูลปลอม: ไม่ต่อ LINE เลย ใช้ผู้ป่วยจำลองแทน
   // เลือกสถานการณ์ได้ด้วย ?user=... ท้าย URL (ดูรายการใน mock.js → MOCK_PATIENT_SCENARIOS)
-  if (USE_MOCK) {
+  if (USE_MOCK_LIFF) {
     const scenarioKey = new URLSearchParams(window.location.search).get('user')
     return startMockPatient(scenarioKey)
   }
@@ -40,7 +40,7 @@ export async function initLiff() {
 // ปิดหน้าต่าง LIFF ได้ไหม — true = เปิดอยู่ในแอป LINE (โหมดจริง)
 // false = โหมดข้อมูลปลอม หรือเปิดในเบราว์เซอร์ธรรมดา (เช่น Chrome/Safari) ซึ่งหน้าเว็บสั่งปิดแท็บตัวเองไม่ได้
 export function canCloseLiff() {
-  return !USE_MOCK && liff.isInClient()
+  return !USE_MOCK_LIFF && liff.isInClient()
 }
 
 // ปิดหน้าต่าง LIFF (ใช้หลังทำรายการเสร็จ)

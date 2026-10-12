@@ -3,9 +3,20 @@ import { mockRequest, mockNowMs } from './mock.js'
 // ทุกหน้าเว็บต้องขอข้อมูลผ่านไฟล์นี้เท่านั้น (ห้ามเรียก fetch เองในหน้า)
 // รายละเอียดของแต่ละ API ดูที่ docs/api-contract.md
 
-// true = ใช้ข้อมูลปลอมจาก mock.js, false = เรียก server จริง
-// ตั้งค่าในไฟล์ client/.env → VITE_USE_MOCK=true (แก้แล้วต้องรัน npm run dev ใหม่)
-export const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
+// true = ใช้ข้อมูลปลอมจาก mock.js, false = เรียก server จริง — แยกสวิตช์ 2 ฝั่ง (ขั้น K: K1ข)
+// ตั้งค่าในไฟล์ client/.env (แก้แล้วต้องรัน npm run dev ใหม่)
+//   VITE_USE_MOCK_ADMIN = หน้า staff (/admin) + API ที่ขึ้นต้นด้วย /api/admin/
+//   VITE_USE_MOCK_LIFF  = หน้าผู้ป่วย (/liff) + API อื่นทั้งหมด
+export const USE_MOCK_ADMIN = import.meta.env.VITE_USE_MOCK_ADMIN === 'true'
+export const USE_MOCK_LIFF = import.meta.env.VITE_USE_MOCK_LIFF === 'true'
+
+// API นี้ใช้ข้อมูลปลอมไหม — ดูจาก path ว่าเป็น API ของ staff หรือของผู้ป่วย
+function usesMock(path) {
+  return path.startsWith('/api/admin/') ? USE_MOCK_ADMIN : USE_MOCK_LIFF
+}
+
+// ข้อความเมื่อติดต่อ server ไม่ได้ (เช่น ลืมรัน npm run dev ในโฟลเดอร์ server) (ขั้น K: K2ข)
+const SERVER_UNREACHABLE_MESSAGE = 'เชื่อมต่อ server ไม่ได้ กรุณาตรวจว่าเปิด server แล้ว'
 
 // LINE ID token ของผู้ป่วย — หน้า LIFF จะตั้งค่าให้หลังเริ่ม LIFF (ขั้น 7)
 // server ใช้ token นี้ตรวจว่าเป็นผู้ใช้ LINE คนไหนจริง ๆ
@@ -27,7 +38,7 @@ function isStaffSessionApi(path) {
 export async function apiRequest(path, options = {}) {
   try {
     // โหมดข้อมูลปลอม: ไม่ต่อ server เลย
-    if (USE_MOCK) {
+    if (usesMock(path)) {
       return await mockRequest(options.method || 'GET', path, options.body)
     }
     return await serverRequest(path, options)
@@ -50,12 +61,21 @@ async function serverRequest(path, { method = 'GET', body } = {}) {
     headers.Authorization = `Bearer ${lineIdToken}`
   }
 
-  const response = await fetch(path, {
-    method,
-    headers,
-    credentials: 'include', // ส่ง session cookie ไปด้วย (ใช้กับ staff)
-    body: body ? JSON.stringify(body) : undefined,
-  })
+  let response
+  try {
+    response = await fetch(path, {
+      method,
+      headers,
+      credentials: 'include', // ส่ง session cookie ไปด้วย (ใช้กับ staff)
+      body: body ? JSON.stringify(body) : undefined,
+    })
+  } catch {
+    // ส่งคำขอไม่ออกเลย (เช่น เน็ตหลุด, เครื่องที่เปิด server ปิดอยู่)
+    const error = new Error(SERVER_UNREACHABLE_MESSAGE)
+    error.code = 'SERVER_ERROR'
+    error.status = 0
+    throw error
+  }
 
   // จำส่วนต่างเวลากับ server (ถ้าตั้ง DEMO_NOW ที่ server ตัวนับถอยหลังจะตามเวลาเดโม)
   const serverNow = Date.parse(response.headers.get('X-Server-Now') || '')
@@ -65,7 +85,11 @@ async function serverRequest(path, { method = 'GET', body } = {}) {
 
   const data = await response.json().catch(() => null)
   if (!response.ok) {
-    const error = new Error(data?.message || `เกิดข้อผิดพลาด (${response.status})`)
+    // server ของเราตอบ error เป็น JSON { code, message } เสมอ
+    // ถ้าได้ 500 ขึ้นไปแต่ไม่มี JSON = ไม่ใช่ server ของเราตอบ (เช่น ลืมเปิด server → Vite proxy ตอบ 500 เปล่า ๆ)
+    const unreachable = data === null && response.status >= 500
+    const message = unreachable ? SERVER_UNREACHABLE_MESSAGE : data?.message || `เกิดข้อผิดพลาด (${response.status})`
+    const error = new Error(message)
     error.code = data?.code || 'SERVER_ERROR'
     error.status = response.status
     error.data = data // ข้อมูลเพิ่มเติม เช่น fields, appointment
@@ -202,9 +226,12 @@ export function rescheduleAppointment(slotId) {
   return apiRequest('/api/me/appointment/reschedule', { method: 'POST', body: { slotId } })
 }
 
-// "ตอนนี้" (มิลลิวินาที) ที่หน้าเว็บใช้นับถอยหลังเวลาถือคิว
+// "ตอนนี้" (มิลลิวินาที) ที่หน้าเว็บใช้นับถอยหลังเวลาถือคิว / เทียบเวลานัด / เลือกเดือนในหน้าสถิติ
 // โหมดข้อมูลปลอม = นาฬิกาจำลองของ mock.js (เริ่มที่วันเปิดทำการถัดไป 07:12)
 // โหมดจริง = นาฬิกาเครื่อง + ส่วนต่างกับ server (จาก header X-Server-Now) → ตรงกับเวลาที่ server ใช้ตัดสินกฎ
+// ดูสวิตช์ของฝั่งที่เปิดอยู่: หน้า /admin ใช้ VITE_USE_MOCK_ADMIN, หน้าอื่นใช้ VITE_USE_MOCK_LIFF
 export function getNowMs() {
-  return USE_MOCK ? mockNowMs() : Date.now() + serverOffsetMs
+  const onAdminPage = window.location.pathname.startsWith('/admin')
+  const useMock = onAdminPage ? USE_MOCK_ADMIN : USE_MOCK_LIFF
+  return useMock ? mockNowMs() : Date.now() + serverOffsetMs
 }

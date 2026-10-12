@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getAdminStats, getAdminStatsTrend } from '../../lib/api.js'
+import { getAdminStats, getAdminStatsTrend, getNowMs } from '../../lib/api.js'
 import { formatThaiMonthLong, formatThaiMonthShort } from '../../lib/format.js'
 import iconCalendar from '../../assets/admin/icon-calendar.svg'
 
@@ -8,10 +8,11 @@ import iconCalendar from '../../assets/admin/icon-calendar.svg'
 // กราฟวาดด้วย div ธรรมดา (ไม่ใช้ไลบรารีกราฟ)
 
 // รายการเดือนให้เลือก = เดือนปัจจุบันย้อนหลัง 12 เดือน (ใหม่สุดอยู่บน) เป็น 'YYYY-MM'
+// "เดือนปัจจุบัน" ใช้ getNowMs() ให้ตรงกับเวลาของ server (รวม DEMO_NOW) (ขั้น K: J9)
 function lastTwelveMonths() {
     const months = []
     for (let monthsAgo = 0; monthsAgo < 12; monthsAgo++) {
-    const day = new Date()
+    const day = new Date(getNowMs())
     day.setDate(1) // ตั้งเป็นวันที่ 1 ก่อน กันเดือนเพี้ยน (เช่น 31 ต.ค. ย้อน 1 เดือน)
     day.setMonth(day.getMonth() - monthsAgo)
     const month = String(day.getMonth() + 1).padStart(2, '0')
@@ -190,11 +191,12 @@ export default function AdminStats() {
           <div className={loading ? 'opacity-60' : ''}>
             {/* ===== แถวบน: การ์ด 4 ใบ ===== */}
             <div className="mt-3 grid grid-cols-4 gap-4">
+              {/* ใต้นัดทั้งหมด = วันเปิด · คิวทั้งเดือน — ไม่ใช้คำว่า "จาก" เพราะนัดทั้งหมดนับนัดยกเลิกด้วย อาจเกินจำนวนคิวได้ (ขั้น K: J10, K4ค) */}
               <SummaryCard
                 label="นัดทั้งหมด"
                 value={stats.total}
                 valueColor="text-staff-number"
-                note={`จาก ${stats.totalSlots} คิว (${stats.workingDays} วันทำการ)`}
+                note={`เปิด ${stats.workingDays} วัน · ${stats.totalSlots} คิว`}
               />
               <SummaryCard
                 label="มาตามนัด"
