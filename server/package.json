@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "node --watch --env-file-if-exists=.env index.js",
     "start": "node --env-file-if-exists=.env index.js",
-    "db:reset": "node --env-file-if-exists=.env db/reset.js"
+    "db:reset": "node --env-file-if-exists=.env db/reset.js",
+    "db:seed": "node --env-file-if-exists=.env db/seed.js"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.2",
     "express": "^5.1.0",
     "pg": "^8.23.1"
   }

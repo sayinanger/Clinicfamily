@@ -34,13 +34,14 @@ JOIN time_slots s ON s.slot_id = a.slot_id
 WHERE a.status = 'booked' AND s.slot_status <> 'booked'
 
 UNION ALL
--- 4) ช่วงเวลา booked แต่ไม่มีนัด booked อยู่เลย
-SELECT 'slot booked แต่ไม่มีนัด booked', s.slot_id,
+-- 4) ช่วงเวลา booked แต่ไม่มีนัด booked / no_show อยู่เลย
+--    (นัดไม่มา → คิวคงเป็น booked เพราะเวลาผ่านแล้ว ไม่มีใครจองต่อได้ — ตกลง 12 ต.ค.)
+SELECT 'slot booked แต่ไม่มีนัด booked/no_show', s.slot_id,
        s.slot_date || ' ' || s.start_time
 FROM time_slots s
 WHERE s.slot_status = 'booked'
   AND NOT EXISTS (SELECT 1 FROM appointments a
-                  WHERE a.slot_id = s.slot_id AND a.status = 'booked')
+                  WHERE a.slot_id = s.slot_id AND a.status IN ('booked', 'no_show'))
 
 UNION ALL
 -- 5) held ต้องมี held_by_user_id + hold_expires_at คู่กัน · สถานะอื่นต้องเป็น null ทั้งคู่
