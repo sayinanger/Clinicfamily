@@ -332,7 +332,8 @@ const handlers = [
 // - 5 เดือนที่ผ่านมา: เต็มเดือน อัตราไม่มาลดลงเรื่อย ๆ (12.5% → 7.2%) แบบตัวอย่างใน Figma
 //   (นัดรวมไม่เกิน 96 = 8 วันทำการ × 12 คิว เพราะบางเดือนมีเสาร์–อาทิตย์แค่ 8 วัน)
 // - เดือนปัจจุบัน: เพิ่งเริ่ม → นัดส่วนใหญ่ยังไม่ถึงเวลา (นับใน total อย่างเดียว)
-// - เดือนที่เก่ากว่านั้น: ยังไม่มีข้อมูล (ระบบยังไม่เปิดใช้) → ทุกค่าเป็น 0 และอัตราเป็น null ("—")
+// - เดือนที่เก่ากว่านั้น: ยังไม่มีข้อมูล (ระบบยังไม่เปิดใช้) → นัดทุกค่าเป็น 0 และอัตราเป็น null ("—")
+//   แต่วันทำการ/คิว ยังนับจากปฏิทินเหมือน server (ขั้น J: J4ก)
 // key = จำนวนเดือนย้อนหลังจากเดือนปัจจุบัน (0 = เดือนนี้, 1 = เดือนก่อน, ...)
 const statsByMonthsAgo = {
   0: { total: 40, attended: 15, noShow: 1, cancelled: 4 }, // อีก 20 นัดยังไม่ถึงเวลา
@@ -388,8 +389,8 @@ function calculateNoShowRate(counts) {
 function buildMonthStats(month) {
   const monthsAgo = monthsAgoOf(month)
   const counts = statsByMonthsAgo[monthsAgo] || { total: 0, attended: 0, noShow: 0, cancelled: 0 }
-  // เดือนที่ไม่มีข้อมูล = ระบบยังไม่สร้างเวลา → 0 วันทำการ
-  const workingDays = statsByMonthsAgo[monthsAgo] ? countOpenDays(month) : 0
+  // วันทำการนับจากปฏิทินเสมอ แม้เดือนนั้นไม่มีนัด (เหมือน server — J4ก)
+  const workingDays = countOpenDays(month)
 
   const prevMonth = monthKey(monthsAgo + 1)
   const prevCounts = statsByMonthsAgo[monthsAgo + 1] || { attended: 0, noShow: 0 }
@@ -418,6 +419,12 @@ handlers.push(
     path: '/api/admin/stats',
     handle({ query }) {
       requireStaffLogin()
+      // รูปแบบเดือนผิด → 400 เหมือน server (J1ก)
+      if (query.month && !/^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(query.month)) {
+        throw mockError(400, 'VALIDATION_ERROR', 'รูปแบบเดือนไม่ถูกต้อง', {
+          fields: { month: 'ต้องเป็นเดือนแบบ YYYY-MM เช่น 2026-10' },
+        })
+      }
       return buildMonthStats(query.month || monthKey(0))
     },
   },
@@ -428,7 +435,11 @@ handlers.push(
     path: '/api/admin/stats/trend',
     handle({ query }) {
       requireStaffLogin()
-      const count = Number(query.months) || 6
+      // ไม่ส่ง → 6 · รับ 1–12 · นอกนั้น → 400 เหมือน server (J6ก)
+      const count = query.months ? (/^\d{1,2}$/.test(query.months) ? Number(query.months) : 0) : 6
+      if (count < 1 || count > 12) {
+        throw mockError(400, 'VALIDATION_ERROR', 'จำนวนเดือนไม่ถูกต้อง', { fields: { months: 'ต้องเป็นตัวเลข 1–12' } })
+      }
       const months = []
       for (let monthsAgo = count - 1; monthsAgo >= 0; monthsAgo--) {
         const month = monthKey(monthsAgo)

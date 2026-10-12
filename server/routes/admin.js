@@ -1,5 +1,5 @@
 // API ฝั่ง staff (S1–S11) — ขั้น G: S1 login / S2 logout / S3 me · ขั้น H: S4–S6 รายการนัด
-// ขั้น I: S7–S9 จัดการเวลา · (ขั้น J จะเพิ่ม S10–S11 ในไฟล์นี้)
+// ขั้น I: S7–S9 จัดการเวลา · ขั้น J: S10–S11 สถิติ
 // รูปแบบคำขอ/คำตอบตาม docs/api-contract.md หัวข้อ 2
 
 import { Router } from 'express'
@@ -9,6 +9,7 @@ import { requireStaff } from '../lib/auth.js'
 import { nextOpenDay, isValidDateString } from '../lib/clock.js'
 import { AppointmentError, listStaffAppointments, markNoShow, undoNoShow } from '../services/appointments.js'
 import { SlotError, listAdminSlots, closeSlot, openSlot } from '../services/slots.js'
+import { isValidMonthString, currentMonth, getMonthlyStats, getNoShowTrend } from '../services/stats.js'
 
 const router = Router()
 
@@ -127,6 +128,38 @@ router.post('/admin/slots/:id/open', requireStaff, async (req, res) => {
   } catch (error) {
     sendKnownError(res, error)
   }
+})
+
+// S10. GET /api/admin/stats?month=YYYY-MM — สถิติรายเดือน
+// ไม่ส่ง month → เดือนปัจจุบัน · รูปแบบผิด → 400 · เดือนอนาคต/ไม่มีข้อมูล → ตัวเลข 0 และอัตรา null (J1ก)
+router.get('/admin/stats', requireStaff, async (req, res) => {
+  const monthText = req.query.month
+  if (monthText !== undefined && monthText !== '' && !isValidMonthString(monthText)) {
+    return res.status(400).json({
+      code: 'VALIDATION_ERROR',
+      message: 'รูปแบบเดือนไม่ถูกต้อง',
+      fields: { month: 'ต้องเป็นเดือนแบบ YYYY-MM เช่น 2026-10' },
+    })
+  }
+  res.json(await getMonthlyStats(monthText || currentMonth()))
+})
+
+// S11. GET /api/admin/stats/trend?months=6 — อัตราไม่มาย้อนหลัง
+// ไม่ส่ง months → 6 · รับเลขจำนวนเต็ม 1–12 · นอกนั้น → 400 (J6ก)
+router.get('/admin/stats/trend', requireStaff, async (req, res) => {
+  const monthsText = req.query.months
+  let monthCount = 6
+  if (monthsText !== undefined && monthsText !== '') {
+    monthCount = /^\d{1,2}$/.test(monthsText) ? Number(monthsText) : 0
+    if (monthCount < 1 || monthCount > 12) {
+      return res.status(400).json({
+        code: 'VALIDATION_ERROR',
+        message: 'จำนวนเดือนไม่ถูกต้อง',
+        fields: { months: 'ต้องเป็นตัวเลข 1–12' },
+      })
+    }
+  }
+  res.json(await getNoShowTrend(monthCount))
 })
 
 export default router
