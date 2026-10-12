@@ -10,7 +10,7 @@ const MOCK_DELAY_MS = 300
 // ===== ข้อมูลเริ่มต้น =====
 
 // บัญชี staff (ระบบมี 1 บัญชี) — ใช้ login ในโหมดข้อมูลปลอม: staff / 1234
-const mockStaff = { staffId: 1, name: 'Staff User', username: 'staff', password: '1234' }
+const mockStaff = { staffId: 1, name: 'staff', username: 'staff', password: '1234' }
 
 // staff ที่ login อยู่ (แทน session cookie ของ server จริง) — null = ยังไม่ login
 // จำไว้ใน sessionStorage ของเบราว์เซอร์ → กดรีเฟรชแล้วยัง login อยู่ จนกว่าจะปิดแท็บ

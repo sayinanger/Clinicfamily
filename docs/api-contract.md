@@ -100,7 +100,7 @@
 ```
 ได้ `200` + ตั้ง session cookie:
 ```json
-{ "staff": { "staffId": 1, "name": "Staff User" } }
+{ "staff": { "staffId": 1, "name": "staff" } }
 ```
 Error: `400 VALIDATION_ERROR` "กรุณากรอกชื่อผู้ใช้และรหัสผ่าน" · `401 INVALID_LOGIN` "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง"
 
@@ -108,7 +108,7 @@ Error: `400 VALIDATION_ERROR` "กรุณากรอกชื่อผู้�
 ได้ `200` `{ "ok": true }` (ลบ session)
 
 ### S3. GET `/api/admin/me` — staff ที่ login อยู่
-ได้ `200` `{ "staff": { "staffId": 1, "name": "Staff User" } }` · ยังไม่ login → `401 UNAUTHORIZED` (หน้าเว็บพาไป `/admin/login`)
+ได้ `200` `{ "staff": { "staffId": 1, "name": "staff" } }` · ยังไม่ login → `401 UNAUTHORIZED` (หน้าเว็บพาไป `/admin/login`)
 
 ### S4. GET `/api/admin/appointments?date=2026-10-03` — รายการนัดของวันที่เลือก
 - ไม่ส่ง `date` → server ใช้ **วันเปิดทำการถัดไป** (เสาร์/อาทิตย์ที่ใกล้ที่สุด นับวันนี้ด้วยถ้าวันนี้เปิด)
