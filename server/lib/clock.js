@@ -74,6 +74,21 @@ export function isOpenDay(dateString) {
   return dayOfWeek === 0 || dayOfWeek === 6
 }
 
+// วันเปิดทำการถัดไป 'YYYY-MM-DD' = เสาร์/อาทิตย์ที่ใกล้ที่สุด นับวันนี้ด้วยถ้าวันนี้เปิด
+// (S4 / S7 ใช้ตอนหน้าเว็บไม่ได้ส่ง date มา)
+export function nextOpenDay() {
+  let day = bangkokDateOf(now())
+  while (!isOpenDay(day)) day = addDays(day, 1)
+  return day
+}
+
+// ข้อความเป็นวันที่ 'YYYY-MM-DD' ที่มีอยู่จริงไหม (กัน '17-10-2026', '2026-02-30')
+export function isValidDateString(text) {
+  if (typeof text !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(text)) return false
+  const date = new Date(`${text}T00:00:00Z`)
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === text
+}
+
 // วันที่ + เวลา (เวลาไทย) → Date เช่น ('2026-10-17', '07:15') → 07:15 น. ไทย
 // (ข้อ #18 ใน er-review: slot_date + start_time ต้องรวมกันเป็นเวลาไทยเสมอ)
 export function bangkokTime(dateString, time) {

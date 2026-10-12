@@ -195,9 +195,10 @@ export default function AdminAppointments() {
                 <tr key={item.appointmentId} className="h-10">
                   <td className="text-center">{index + 1}</td>
                   <td className="truncate pl-9">
-                    {item.firstName} {item.lastName}
+                    {/* ผู้ป่วยที่ถูกล้างข้อมูล (PDPA) server ส่งชื่อ/เบอร์เป็น null → แสดง "—" */}
+                    {item.firstName || item.lastName ? `${item.firstName ?? ''} ${item.lastName ?? ''}`.trim() : '—'}
                   </td>
-                  <td>{item.phone}</td>
+                  <td>{item.phone || '—'}</td>
                   <td>{formatThaiDateShort(item.date)}</td>
                   <td>{item.startTime}</td>
                   <td className={`font-medium ${statusLabels[item.status]?.color}`}>{statusLabels[item.status]?.text}</td>
