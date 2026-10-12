@@ -26,10 +26,12 @@ export default function App() {
         <Route index element={<LiffHome />} />
         <Route path="pdpa" element={<LiffPdpa />} />
         <Route path="profile" element={<LiffProfile />} />
-        <Route path="booking" element={<LiffBooking />} />
+        {/* หน้าจองคิว + หน้าเลื่อนนัดใช้ไฟล์เดียวกัน → ใส่ key ต่างกันให้ React ถือว่าเป็นคนละหน้า
+            เปลี่ยนจากจองคิวไปเลื่อนนัดแล้วเริ่มใหม่หมด (ป๊อปอัป "คุณมีนัดอยู่แล้ว" และค่าเก่าไม่ติดมา) */}
+        <Route path="booking" element={<LiffBooking key="booking" />} />
         {/* หน้ายกเลิก/เลื่อนนัด + หน้าเลื่อนนัด (ขั้น 7.5) — หน้าเลื่อนนัดใช้ไฟล์เดียวกับหน้าจองคิว แบบ mode="reschedule" */}
         <Route path="appointment" element={<LiffAppointment />} />
-        <Route path="reschedule" element={<LiffBooking mode="reschedule" />} />
+        <Route path="reschedule" element={<LiffBooking key="reschedule" mode="reschedule" />} />
       </Route>
 
       {/* ฝั่ง staff — ทุกหน้าใน AdminLayout ต้อง login ก่อน (AdminLayout เช็กให้) */}
