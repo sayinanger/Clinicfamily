@@ -1,5 +1,5 @@
 // API ฝั่ง staff (S1–S11) — ขั้น G: S1 login / S2 logout / S3 me · ขั้น H: S4–S6 รายการนัด
-// (ขั้น I–J จะเพิ่ม S7–S11 ในไฟล์นี้)
+// ขั้น I: S7–S9 จัดการเวลา · (ขั้น J จะเพิ่ม S10–S11 ในไฟล์นี้)
 // รูปแบบคำขอ/คำตอบตาม docs/api-contract.md หัวข้อ 2
 
 import { Router } from 'express'
@@ -8,6 +8,7 @@ import { query } from '../db.js'
 import { requireStaff } from '../lib/auth.js'
 import { nextOpenDay, isValidDateString } from '../lib/clock.js'
 import { AppointmentError, listStaffAppointments, markNoShow, undoNoShow } from '../services/appointments.js'
+import { SlotError, listAdminSlots, closeSlot, openSlot } from '../services/slots.js'
 
 const router = Router()
 
@@ -60,21 +61,28 @@ router.get('/admin/me', requireStaff, async (req, res) => {
 // S4. GET /api/admin/appointments?date=YYYY-MM-DD — รายการนัดของวันที่เลือก
 // ไม่ส่ง date → วันเปิดทำการถัดไป · วันไหนก็ได้ที่ไม่มีนัด (วันธรรมดา/ไกล) → [] · รูปแบบผิด → 400 (H1ก)
 router.get('/admin/appointments', requireStaff, async (req, res) => {
+  const date = readDateQuery(req, res)
+  if (!date) return // ตอบ 400 ไปแล้ว
+  res.json({ date, appointments: await listStaffAppointments(date) })
+})
+
+// อ่าน ?date= ของ S4 / S7 — ไม่ส่ง → วันเปิดทำการถัดไป · รูปแบบผิด → ตอบ 400 แล้วคืน null (H1ก, I1ก)
+function readDateQuery(req, res) {
   const dateText = req.query.date
   if (dateText !== undefined && dateText !== '' && !isValidDateString(dateText)) {
-    return res.status(400).json({
+    res.status(400).json({
       code: 'VALIDATION_ERROR',
       message: 'รูปแบบวันที่ไม่ถูกต้อง',
       fields: { date: 'ต้องเป็นวันที่แบบ YYYY-MM-DD เช่น 2026-10-17' },
     })
+    return null
   }
-  const date = dateText || nextOpenDay()
-  res.json({ date, appointments: await listStaffAppointments(date) })
-})
+  return dateText || nextOpenDay()
+}
 
-// ส่ง error ที่ตั้งใจไว้ (เช่น NOT_YET_TIME) เป็น { code, message } · error อื่นโยนต่อให้ตัวจัดการกลาง (500)
-function sendAppointmentError(res, error) {
-  if (!(error instanceof AppointmentError)) throw error
+// ส่ง error ที่ตั้งใจไว้ (เช่น NOT_YET_TIME, SLOT_PAST) เป็น { code, message } · error อื่นโยนต่อให้ตัวจัดการกลาง (500)
+function sendKnownError(res, error) {
+  if (!(error instanceof AppointmentError) && !(error instanceof SlotError)) throw error
   res.status(error.status).json({ code: error.code, message: error.message })
 }
 
@@ -83,7 +91,7 @@ router.post('/admin/appointments/:id/no-show', requireStaff, async (req, res) =>
   try {
     res.json(await markNoShow(req.params.id))
   } catch (error) {
-    sendAppointmentError(res, error)
+    sendKnownError(res, error)
   }
 })
 
@@ -92,7 +100,32 @@ router.delete('/admin/appointments/:id/no-show', requireStaff, async (req, res) 
   try {
     res.json(await undoNoShow(req.params.id))
   } catch (error) {
-    sendAppointmentError(res, error)
+    sendKnownError(res, error)
+  }
+})
+
+// S7. GET /api/admin/slots?date=YYYY-MM-DD — เวลาทั้งหมดของวัน (กฎวันที่เหมือน S4 — I1ก)
+router.get('/admin/slots', requireStaff, async (req, res) => {
+  const date = readDateQuery(req, res)
+  if (!date) return // ตอบ 400 ไปแล้ว
+  res.json({ date, slots: await listAdminSlots(date) })
+})
+
+// S8. POST /api/admin/slots/:id/close — กด [ปิด]
+router.post('/admin/slots/:id/close', requireStaff, async (req, res) => {
+  try {
+    res.json(await closeSlot(req.params.id))
+  } catch (error) {
+    sendKnownError(res, error)
+  }
+})
+
+// S9. POST /api/admin/slots/:id/open — กด [เปิด]
+router.post('/admin/slots/:id/open', requireStaff, async (req, res) => {
+  try {
+    res.json(await openSlot(req.params.id))
+  } catch (error) {
+    sendKnownError(res, error)
   }
 })
 

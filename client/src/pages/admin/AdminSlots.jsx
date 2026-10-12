@@ -4,6 +4,7 @@ import DatePickerBox from '../../components/DatePickerBox.jsx'
 
 // หน้าจัดการเวลา — ตาม Figma "จัดการเวลา (v2)" (255:203)
 // API ที่ใช้: S7 ดูเวลาของวัน, S8 กด [ปิด], S9 กด [เปิด] (ดู docs/api-contract.md)
+// คิวที่ถึงเวลาเริ่มแล้ว (isPast จาก server) → ปุ่ม [เลยเวลา] สีเทา + เลขเวลาสีเทา (ขั้น I: I7 แบบ 1, I8ก)
 // ใช้ขนาดเดียวกับหน้ารายการนัด (แถวสูง 40px เตี้ยกว่า Figma, ตัวหนังสือในตารางตัวปกติ ยกเว้นสถานะ)
 // เพื่อให้ 12 คิวอยู่ในจอ MacBook Air โดยไม่ต้องเลื่อน
 
@@ -64,7 +65,7 @@ export default function AdminSlots() {
       // แทนที่แถวเดิมด้วยข้อมูลใหม่จาก server
       setSlots((list) => list.map((item) => (item.slotId === slotId ? updated : item)))
     } catch (error) {
-      setErrorMessage(error.message) // เช่น "ปิดได้เฉพาะเวลาที่ยังว่าง" (มีคนจองไปก่อนกด)
+      setErrorMessage(error.message) // เช่น "ปิดได้เฉพาะเวลาที่ยังว่าง" (มีคนจองไปก่อนกด) / "เวลานี้ผ่านไปแล้ว…" (เปิดหน้าค้างไว้)
       loadSlots(date) // โหลดใหม่ให้ตรงกับ server
     } finally {
       setBusyId(null)
@@ -76,6 +77,15 @@ export default function AdminSlots() {
     const busy = busyId === item.slotId
     // ทุกปุ่มกว้าง 73px เท่ากัน (ตาม Figma หน้านี้) ตัวหนังสือตัวปกติ
     const buttonBase = 'h-7 w-[73px] rounded-[5px] border bg-white text-sm'
+
+    // เลยเวลาแล้ว (ทุกสถานะ) → "เลยเวลา" สีเทา กดไม่ได้ — server ก็ไม่ยอมให้ปิด/เปิด (SLOT_PAST)
+    if (item.isPast) {
+      return (
+        <button type="button" disabled className={`${buttonBase} border-staff-disabled text-staff-disabled`}>
+          เลยเวลา
+        </button>
+      )
+    }
 
     // เปิดรับการจองอยู่ → ปุ่ม [ปิด] กรอบแดง
     if (item.status === 'available') {
@@ -168,7 +178,8 @@ export default function AdminSlots() {
             ) : (
               slots.map((item) => (
                 <tr key={item.slotId} className="h-10">
-                  <td className="pl-10">{item.startTime}</td>
+                  {/* เลยเวลาแล้ว → เลขเวลาสีเทา ให้เห็นเส้นแบ่งชัด */}
+                  <td className={`pl-10 ${item.isPast ? 'text-staff-subtle' : ''}`}>{item.startTime}</td>
                   <td>
                     {/* จุดสีหน้าสถานะ (ขนาด 7px ตาม Figma) — คำสถานะตัวหนา แบบเดียวกับหน้ารายการนัด */}
                     <span className="flex items-center gap-3 text-sm font-medium">

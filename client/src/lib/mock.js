@@ -173,7 +173,10 @@ function getSlotsOfDate(date) {
         else if (!isNextOpenDay && exampleStatusWhenNoAppointment[startTime]) {
           status = exampleStatusWhenNoAppointment[startTime]
         }
-        return { slotId: nextSlotId++, startTime, endTime: addFifteenMinutes(startTime), status }
+        // เลยเวลาแล้ว: สมมติตอนนี้ ~08:05 ของวันเปิดทำการถัดไป (เหมือนหน้ารายการนัด) → คิวถึง 08:00 เลยเวลา
+        //            วันที่ย้อนหลัง → ทุกคิวเลยเวลา
+        const isPast = date < nextOpenDay() || (isNextOpenDay && startTime <= '08:00')
+        return { slotId: nextSlotId++, startTime, endTime: addFifteenMinutes(startTime), status, isPast }
       })
     }
   }
@@ -186,7 +189,7 @@ function findSlot(slotId) {
     const found = list.find((item) => item.slotId === Number(slotId))
     if (found) return found
   }
-  throw mockError(404, 'NOT_FOUND', 'ไม่พบเวลานี้')
+  throw mockError(404, 'NOT_FOUND', 'ไม่พบช่วงเวลานี้')
 }
 
 // ===== รายการ API ที่มีข้อมูลปลอมแล้ว — เพิ่มทีละหน้า =====
@@ -298,6 +301,9 @@ const handlers = [
       if (slot.status !== 'available') {
         throw mockError(409, 'SLOT_NOT_AVAILABLE', 'ปิดได้เฉพาะเวลาที่ยังว่าง')
       }
+      if (slot.isPast) {
+        throw mockError(409, 'SLOT_PAST', 'เวลานี้ผ่านไปแล้ว ปิดหรือเปิดไม่ได้')
+      }
       slot.status = 'closed'
       return slot
     },
@@ -312,6 +318,9 @@ const handlers = [
       const slot = findSlot(params.id)
       if (slot.status !== 'closed') {
         throw mockError(409, 'SLOT_NOT_CLOSED', 'เวลานี้ไม่ได้ถูกปิดอยู่')
+      }
+      if (slot.isPast) {
+        throw mockError(409, 'SLOT_PAST', 'เวลานี้ผ่านไปแล้ว ปิดหรือเปิดไม่ได้')
       }
       slot.status = 'available'
       return slot
@@ -753,7 +762,7 @@ function findSlotWithDate(slotId) {
     const slot = list.find((item) => item.slotId === Number(slotId))
     if (slot) return { slot, date }
   }
-  throw mockError(404, 'NOT_FOUND', 'ไม่พบเวลานี้')
+  throw mockError(404, 'NOT_FOUND', 'ไม่พบช่วงเวลานี้')
 }
 
 // ถ้าคิวที่ถือไว้หมดเวลาแล้ว → ปล่อยคิว (server จริงให้ cron เคลียร์ทุกนาที)
