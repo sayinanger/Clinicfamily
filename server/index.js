@@ -12,6 +12,7 @@ import healthRouter from './routes/health.js'
 import adminRouter from './routes/admin.js'
 import userRouter from './routes/user.js'
 import { warnLineAuthSettings } from './lib/lineAuth.js'
+import { warnClinicSettings } from './lib/rules.js'
 
 // ---------- เช็กคีย์ลับของ cookie ----------
 // ไม่มีคีย์ = เซ็น cookie ไม่ได้ → หยุดตั้งแต่ตอนเปิด server (ไม่ใช้ค่าสำรองในโค้ด เพราะ repo เป็น Public ใครก็อ่านได้)
@@ -23,6 +24,8 @@ if (!process.env.SESSION_SECRET) {
 
 // เตือนค่าตั้งของการยืนยันตัวตนผู้ป่วย (บัตรทดสอบเปิดอยู่ / ยังไม่ใส่ Channel ID ของ LINE)
 warnLineAuthSettings()
+// เตือนถ้ายังไม่ได้ตั้งเบอร์โทรคลินิก (CLINIC_PHONE) — server ยังเปิดได้ (M7ก)
+warnClinicSettings()
 
 const app = express()
 
@@ -59,7 +62,7 @@ app.use((req, res, next) => {
 app.use('/api', healthRouter)
 // API ฝั่ง staff S1–S3 (ขั้น H–J เพิ่ม S4–S11 ในไฟล์เดียวกัน)
 app.use('/api', adminRouter)
-// API ฝั่งผู้ป่วย U1–U3 (ขั้น M–N เพิ่ม U4–U11 ในไฟล์เดียวกัน) — ยืนยันตัวตนด้วย LINE ID token
+// API ฝั่งผู้ป่วย U1–U8 (ขั้น N เพิ่ม U9–U11 ในไฟล์เดียวกัน) — ยืนยันตัวตนด้วย LINE ID token
 app.use('/api', userRouter)
 
 // ---------- ไม่เจอ API ที่ขอ ----------

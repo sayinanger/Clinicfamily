@@ -1,4 +1,4 @@
-// API ฝั่งผู้ป่วย (หน้า LIFF) — ขั้น L: U1–U3 · (ขั้น M: U4–U8 · ขั้น N: U9–U11 จะเพิ่มในไฟล์นี้)
+// API ฝั่งผู้ป่วย (หน้า LIFF) — ขั้น L: U1–U3 · ขั้น M: U4–U8 · (ขั้น N: U9–U11 จะเพิ่มในไฟล์นี้)
 // รูปแบบคำขอ/คำตอบตาม docs/api-contract.md หัวข้อ 3
 //
 // ลำดับการเช็กทุกครั้ง (contract หัวข้อ 0):
@@ -9,6 +9,8 @@
 import { Router } from 'express'
 import { requirePatient } from '../lib/lineAuth.js'
 import { findUserByLineId, getMe, acceptPdpa, validateProfile, saveProfile, toProfile } from '../services/users.js'
+import { SlotError, listBookingDays, listPatientSlots, holdSlot, releaseHold } from '../services/slots.js'
+import { AppointmentError, getMyAppointment } from '../services/appointments.js'
 
 const router = Router()
 
@@ -47,6 +49,45 @@ router.put('/me/profile', requirePatient, requirePdpa, async (req, res) => {
     return res.status(400).json({ code: 'VALIDATION_ERROR', message: 'กรุณากรอกข้อมูลให้ครบถ้วน', fields })
   }
   res.json(await saveProfile(req.user.user_id, req.body))
+})
+
+// error ที่ตั้งใจตอบ (SlotError / AppointmentError) → { code, message, ...ข้อมูลแนบ } · อย่างอื่นส่งต่อเป็น 500
+function sendKnownError(res, error) {
+  if (!(error instanceof SlotError) && !(error instanceof AppointmentError)) throw error
+  res.status(error.status).json({ code: error.code, message: error.message, ...(error.extra || {}) })
+}
+
+// U4. GET /api/booking-days — วันที่เลือกจองได้ (แถบ/ปฏิทินเลือกวัน)
+router.get('/booking-days', requirePatient, requirePdpa, async (req, res) => {
+  res.json(await listBookingDays(req.user.user_id))
+})
+
+// U5. GET /api/slots?date=YYYY-MM-DD — ตารางเวลาของวัน
+router.get('/slots', requirePatient, requirePdpa, async (req, res) => {
+  try {
+    res.json(await listPatientSlots(req.user.user_id, req.query.date))
+  } catch (error) {
+    sendKnownError(res, error)
+  }
+})
+
+// U6. POST /api/holds — ถือคิว ส่ง { slotId, purpose: 'book' | 'reschedule' } (ต้องกรอกประวัติก่อน)
+router.post('/holds', requirePatient, requirePdpa, requireProfile, async (req, res) => {
+  try {
+    res.json(await holdSlot(req.user, req.body))
+  } catch (error) {
+    sendKnownError(res, error)
+  }
+})
+
+// U7. DELETE /api/holds/current — ปล่อยคิวที่ถืออยู่ (กด "ยกเลิก" ในป๊อปอัปยืนยัน)
+router.delete('/holds/current', requirePatient, requirePdpa, async (req, res) => {
+  res.json(await releaseHold(req.user.user_id))
+})
+
+// U8. GET /api/me/appointment — นัดที่ยังใช้งานอยู่ของฉัน + เบอร์คลินิก
+router.get('/me/appointment', requirePatient, requirePdpa, async (req, res) => {
+  res.json(await getMyAppointment(req.user.user_id))
 })
 
 export default router

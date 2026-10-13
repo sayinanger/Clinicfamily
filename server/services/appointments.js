@@ -1,5 +1,5 @@
-// งานเกี่ยวกับนัดหมาย (ตาราง appointments) — ขั้น H: ฝั่ง staff S4–S6
-// (ฝั่งผู้ป่วย U8–U11 จะเพิ่มในไฟล์นี้ภายหลัง)
+// งานเกี่ยวกับนัดหมาย (ตาราง appointments) — ขั้น H: ฝั่ง staff S4–S6 · ขั้น M: ฝั่งผู้ป่วย U8
+// (ขั้น N: U9–U11 จะเพิ่มในไฟล์นี้)
 //
 // กฎที่ใช้ (project-snapshot หมวด 5 + ตัดสินขั้น H):
 // - ปุ่ม [ไม่มา] กดได้เมื่อ "ถึงเวลานัด" (เวลาตอนนี้ ≥ เวลานัด) ย้อนหลังกี่วันก็ได้ (H3ก, H4ก)
@@ -9,6 +9,7 @@
 
 import { query } from '../db.js'
 import { now, toThaiIso, bangkokTime } from '../lib/clock.js'
+import { CHANGE_CUTOFF_MS, CLINIC_PHONE } from '../lib/rules.js'
 
 // แก้คืนได้ภายใน 5 นาทีหลังกด [ไม่มา]
 export const UNDO_NO_SHOW_MS = 5 * 60 * 1000
@@ -139,4 +140,60 @@ export async function undoNoShow(idText) {
   if (!row) throw new AppointmentError(404, 'NOT_FOUND', 'ไม่พบนัดหมายนี้')
   if (row.status !== 'no_show') throw new AppointmentError(409, 'INVALID_STATUS', 'นัดนี้ไม่อยู่ในสถานะไม่มา')
   throw new AppointmentError(409, 'UNDO_EXPIRED', 'เกิน 5 นาทีแล้ว แก้คืนไม่ได้')
+}
+
+// ---------- ขั้น M: U8 นัดของผู้ป่วย ----------
+//
+// นัด active (M1ก) = สถานะ booked และ "ยังไม่ถึงเวลาเริ่มนัด" (เส้นเดียวกับปุ่ม [ไม่มา] / "มา" ในสถิติ)
+//   ถึงเวลานัดแล้ว = นัดนั้นจบ (มา หรือ staff กดไม่มา) → ผู้ป่วยจองนัดใหม่ได้
+// ใช้ร่วมกับ U6 (กฎ "มีนัดอยู่แล้ว" / เลื่อนนัด) และ U9–U11 ในขั้น N
+
+// เวลาเริ่มนัดแบบเวลาไทยใน SQL (แบบเดียวกับ S5)
+const APPOINTMENT_START_SQL = `(t.slot_date + t.start_time) AT TIME ZONE 'Asia/Bangkok'`
+
+// หานัด active ของผู้ป่วย (ไม่มี → null)
+// db = ตัวส่งคำสั่ง (ปกติ query · ใน transaction ส่ง client.query มาแทน)
+export async function findActiveAppointment(userId, currentTime, db = query) {
+  const result = await db(
+    `SELECT a.appointment_id, a.status, t.slot_date, t.start_time, t.end_time
+     FROM appointments a
+     JOIN time_slots t ON t.slot_id = a.slot_id
+     WHERE a.user_id = $1
+       AND a.status = 'booked'
+       AND ${APPOINTMENT_START_SQL} > $2::timestamptz
+     ORDER BY t.slot_date, t.start_time
+     LIMIT 1`,
+    [userId, currentTime]
+  )
+  return result.rows[0] ?? null
+}
+
+// เส้นตายยกเลิก/เลื่อน (Date) = เวลานัด − 15 นาที
+export function changeDeadlineOf(date, startTime) {
+  return new Date(bangkokTime(date, startTime).getTime() - CHANGE_CUTOFF_MS)
+}
+
+// แถวนัด → รูปแบบ U8 ใน docs/api-contract.md
+// canChange = ตอนนี้ยังไม่ถึงเส้นตาย (นัด 07:30 → ทำได้ถึง 07:14:59, ตั้งแต่ 07:15 ไม่ได้)
+export function toPatientAppointment(row, currentTime) {
+  const deadline = changeDeadlineOf(row.slot_date, row.start_time)
+  return {
+    appointmentId: row.appointment_id,
+    date: row.slot_date,
+    startTime: row.start_time.slice(0, 5),
+    endTime: row.end_time.slice(0, 5),
+    status: row.status,
+    canChange: currentTime < deadline,
+    changeDeadline: toThaiIso(deadline),
+  }
+}
+
+// U8 — นัดที่ยังใช้งานอยู่ของฉัน + เบอร์คลินิก (ไม่มีนัด → appointment: null)
+export async function getMyAppointment(userId) {
+  const currentTime = now()
+  const row = await findActiveAppointment(userId, currentTime)
+  return {
+    appointment: row ? toPatientAppointment(row, currentTime) : null,
+    clinicPhone: CLINIC_PHONE,
+  }
 }
