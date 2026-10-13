@@ -10,6 +10,8 @@ import { SESSION_MAX_AGE_MS } from './lib/auth.js'
 import { ensureSlots } from './services/slots.js'
 import healthRouter from './routes/health.js'
 import adminRouter from './routes/admin.js'
+import userRouter from './routes/user.js'
+import { warnLineAuthSettings } from './lib/lineAuth.js'
 
 // ---------- เช็กคีย์ลับของ cookie ----------
 // ไม่มีคีย์ = เซ็น cookie ไม่ได้ → หยุดตั้งแต่ตอนเปิด server (ไม่ใช้ค่าสำรองในโค้ด เพราะ repo เป็น Public ใครก็อ่านได้)
@@ -18,6 +20,9 @@ if (!process.env.SESSION_SECRET) {
     'ยังไม่ได้ตั้ง SESSION_SECRET → สร้างด้วยคำสั่ง node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))" แล้วใส่ใน server/.env'
   )
 }
+
+// เตือนค่าตั้งของการยืนยันตัวตนผู้ป่วย (บัตรทดสอบเปิดอยู่ / ยังไม่ใส่ Channel ID ของ LINE)
+warnLineAuthSettings()
 
 const app = express()
 
@@ -54,6 +59,8 @@ app.use((req, res, next) => {
 app.use('/api', healthRouter)
 // API ฝั่ง staff S1–S3 (ขั้น H–J เพิ่ม S4–S11 ในไฟล์เดียวกัน)
 app.use('/api', adminRouter)
+// API ฝั่งผู้ป่วย U1–U3 (ขั้น M–N เพิ่ม U4–U11 ในไฟล์เดียวกัน) — ยืนยันตัวตนด้วย LINE ID token
+app.use('/api', userRouter)
 
 // ---------- ไม่เจอ API ที่ขอ ----------
 // มาถึงตรงนี้แปลว่าไม่มีเส้นทางไหนตรงเลย → ตอบ 404 ตามรูปแบบ error ใน docs/api-contract.md

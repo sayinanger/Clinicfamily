@@ -49,6 +49,9 @@
 - **ผู้ป่วย (LIFF):** ทุก API ที่ขึ้นต้น `/api/me`, `/api/slots`, `/api/booking-days`, `/api/holds`, `/api/appointments` ต้องส่ง header
   `Authorization: Bearer <LINE ID token>` (ได้จาก `liff.getIDToken()`) → server ส่ง token ไปตรวจกับ LINE แล้วได้ `line_user_id` ของจริง
   (ไม่ให้หน้าเว็บส่ง lineUserId มาเอง เพราะปลอมได้)
+  - 🆕 (ขั้น L) server ตรวจบัตรกับ LINE (`POST https://api.line.me/oauth2/v2.1/verify` + `LINE_LOGIN_CHANNEL_ID`) ครั้งแรก แล้วจำผลไว้ในหน่วยความจำจนบัตรหมดอายุ
+  - 🆕 (ขั้น L) ไม่มีบัตร / บัตรปลอม / หมดอายุ → `401 UNAUTHORIZED` "การยืนยันตัวตนหมดอายุ กรุณาปิดแล้วเปิดหน้านี้ใหม่"
+  - 🆕 (ขั้น L) **บัตรทดสอบ** (Postman): `Authorization: Bearer test:<line_user_id>` เช่น `test:seed-01` (ผู้ป่วยใน seed), `test:new-01` (คนใหม่) — ใช้ได้เฉพาะเมื่อตั้ง `ALLOW_TEST_TOKEN=true` ใน `server/.env` (วันเดโมต้องเป็น `false` · ดูได้ที่ `/api/health` → `testToken`)
 - **Staff:** login แล้ว server ตั้ง session cookie (`clinic_session`, httpOnly, อายุ 8 ชม.นับจาก login) — ทุก API `/api/admin/...` (ยกเว้น login, logout) ต้องมี cookie นี้
 - **โหมด mock:** ไม่มีการตรวจจริง — ใช้ผู้ป่วยจำลอง 1 คน (เลือกสถานการณ์ได้ด้วย `?user=new` / `pdpa` / `profile` / `booked` / `rush` / `late` ท้าย URL หน้า `/liff` — `booked` = มีนัดอยู่แล้ว, `rush` = จองกระชั้นเช้าวันนัด, `late` = มีนัดแต่เลยเวลาแก้ไข) และ staff login ด้วย `staff` / `1234`
 
@@ -234,7 +237,6 @@ Error: `409 SLOT_NOT_CLOSED` "เวลานี้ไม่ได้ถูก�
 ได้ `200`:
 ```json
 {
-  "lineDisplayName": "Somying",
   "pdpaAccepted": true,
   "profileCompleted": true,
   "profile": {
@@ -248,11 +250,14 @@ Error: `409 SLOT_NOT_CLOSED` "เวลานี้ไม่ได้ถูก�
 }
 ```
 - ผู้ใช้ใหม่ (ยังไม่เคยมีในระบบ) → `pdpaAccepted: false`, `profileCompleted: false`, `profile: null`
+- 🆕 (ขั้น L) ยินยอมแล้วแต่ยังไม่กรอกประวัติ → `pdpaAccepted: true`, `profileCompleted: false`, `profile: null` · U1 ไม่เขียนฐานข้อมูล (แถว users สร้างตอน U2)
+- 🆕 (ขั้น L) ตัด `lineDisplayName` ออก (หน้าเว็บไม่ได้ใช้ — ชื่อ LINE ได้จาก `liff.getProfile()` / ข้อความทักทายตั้งใน LINE OA Manager)
 - `gender`: `male` (ชาย) · `female` (หญิง) · `unspecified` (ไม่ระบุ)
 - `age` server คำนวณจากวันเกิด (ใช้ในการ์ดยืนยันการจอง)
 
 ### U2. POST `/api/me/pdpa` — กดยินยอม PDPA
 ได้ `200` `{ "pdpaAcceptedAt": "2026-10-01T09:00:00+07:00" }`
+- 🆕 (ขั้น L) ครั้งแรกสร้างแถว users (เก็บ `line_user_id` + เวลายินยอม) · กดซ้ำ → ตอบเวลาครั้งแรกเดิม (ไม่เปลี่ยน)
 
 ### U3. PUT `/api/me/profile` — บันทึกประวัติ (ใช้ทั้งกรอกครั้งแรกและแก้ไข)
 ส่ง:
@@ -265,6 +270,8 @@ Error `400 VALIDATION_ERROR`:
 { "code": "VALIDATION_ERROR", "message": "กรุณากรอกข้อมูลให้ครบถ้วน", "fields": { "phone": "เบอร์โทรต้องเป็นตัวเลข 10 หลัก" } }
 ```
 เงื่อนไข: ทุกช่องบังคับ · เบอร์โทร 10 หลักขึ้นต้น 0 · วันเกิดต้องไม่เป็นวันในอนาคต
+- 🆕 (ขั้น L) ต้องยินยอม PDPA ก่อน (ยัง → `403 PDPA_REQUIRED`) · ชื่อ/นามสกุลตัดช่องว่างหน้า-หลังก่อนเก็บ
+- 🆕 (ขั้น L) ข้อความใน `fields` (เหมือน mock): `firstName` "กรุณากรอกชื่อ" / "ชื่อยาวเกิน 100 ตัวอักษร" · `lastName` "กรุณากรอกนามสกุล" / "นามสกุลยาวเกิน 100 ตัวอักษร" · `gender` "กรุณาเลือกเพศ" · `birthDate` "กรุณาเลือกวันเกิด" / "รูปแบบวันที่ไม่ถูกต้อง" (เช่น `20-05-1966`, `2000-02-30`) / "วันเกิดต้องไม่เป็นวันในอนาคต" (เทียบวันที่ไทยของ server — ตาม `DEMO_NOW`) · `phone` "กรุณากรอกเบอร์โทรศัพท์" / "เบอร์โทรต้องเป็นตัวเลข 10 หลัก"
 
 ### U4. GET `/api/booking-days` — วันที่เลือกได้ (แถบ "เลือกวันที่")
 ได้ `200` = วันเสาร์–อาทิตย์ภายใน 14 วันนับจากวันนี้:

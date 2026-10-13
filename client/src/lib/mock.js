@@ -591,11 +591,16 @@ function requirePatientPdpa() {
 function validateProfile(body) {
   const fields = {}
   if (!body?.firstName?.trim()) fields.firstName = 'กรุณากรอกชื่อ'
+  else if (body.firstName.trim().length > 100) fields.firstName = 'ชื่อยาวเกิน 100 ตัวอักษร' // ขั้น L (ตรงกับ server)
   if (!body?.lastName?.trim()) fields.lastName = 'กรุณากรอกนามสกุล'
+  else if (body.lastName.trim().length > 100) fields.lastName = 'นามสกุลยาวเกิน 100 ตัวอักษร'
   if (!['male', 'female', 'unspecified'].includes(body?.gender)) fields.gender = 'กรุณาเลือกเพศ'
 
   if (!body?.birthDate) {
     fields.birthDate = 'กรุณาเลือกวันเกิด'
+  } else if (!/^\d{4}-\d{2}-\d{2}$/.test(body.birthDate) || Number.isNaN(Date.parse(body.birthDate))) {
+    // ขั้น L (ตรงกับ server): รูปแบบผิด เช่น '20-05-1966' (วันที่ไม่มีจริงอย่าง 2000-02-30 server จับได้ละเอียดกว่า)
+    fields.birthDate = 'รูปแบบวันที่ไม่ถูกต้อง'
   } else if (body.birthDate > toDateString(new Date())) {
     // เทียบข้อความ 'YYYY-MM-DD' ได้เลย
     fields.birthDate = 'วันเกิดต้องไม่เป็นวันในอนาคต'
@@ -617,7 +622,6 @@ handlers.push(
     path: '/api/me',
     handle() {
       return {
-        lineDisplayName: mockPatient.displayName,
         pdpaAccepted: Boolean(mockPatient.pdpaAcceptedAt),
         profileCompleted: Boolean(mockPatient.profile),
         profile: profileWithAge(mockPatient.profile),
