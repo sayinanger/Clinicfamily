@@ -62,7 +62,7 @@ app.use((req, res, next) => {
 app.use('/api', healthRouter)
 // API ฝั่ง staff S1–S3 (ขั้น H–J เพิ่ม S4–S11 ในไฟล์เดียวกัน)
 app.use('/api', adminRouter)
-// API ฝั่งผู้ป่วย U1–U8 (ขั้น N เพิ่ม U9–U11 ในไฟล์เดียวกัน) — ยืนยันตัวตนด้วย LINE ID token
+// API ฝั่งผู้ป่วย U1–U11 — ยืนยันตัวตนด้วย LINE ID token
 app.use('/api', userRouter)
 
 // ---------- ไม่เจอ API ที่ขอ ----------

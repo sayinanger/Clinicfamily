@@ -16,7 +16,7 @@ const MAX_NAME_LENGTH = 100
 const GENDERS = ['male', 'female', 'unspecified']
 
 const SELECT_USER = `
-  SELECT user_id, first_name, last_name, gender, birth_date, phone, pdpa_accepted_at
+  SELECT user_id, line_user_id, first_name, last_name, gender, birth_date, phone, pdpa_accepted_at
   FROM users`
 
 // หาผู้ป่วยจากรหัส LINE — ไม่เจอ (ยังไม่เคยยินยอม) → null

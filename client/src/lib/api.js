@@ -25,6 +25,9 @@ export function setLineIdToken(token) {
   lineIdToken = token
 }
 
+// ผู้ป่วยได้ 401 (บัตร LINE หมดอายุ/ไม่ผ่าน) → ไม่พาไปไหน หน้าแสดงข้อความจาก server ตรง ๆ (ขั้น N: L4ก)
+//   "การยืนยันตัวตนหมดอายุ กรุณาปิดแล้วเปิดหน้านี้ใหม่"
+
 // API ของ staff ที่ถ้าได้ 401 แปลว่า session หมดอายุ → ต้องพากลับหน้า login
 // ยกเว้น login (401 = รหัสผิด) และ /api/admin/me (AdminLayout จัดการเอง)
 function isStaffSessionApi(path) {

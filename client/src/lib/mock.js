@@ -891,6 +891,18 @@ function requirePatientProfile() {
   }
 }
 
+// คิวที่ถืออยู่ในรูปแบบที่ U6 ตอบ
+function holdForApi(hold) {
+  return {
+    slotId: hold.slotId,
+    date: hold.date,
+    startTime: hold.startTime,
+    holdExpiresAt: toBangkokIso(hold.expiresAtMs),
+    changeDeadline: toBangkokIso(changeDeadlineMs(hold.date, hold.startTime)),
+    shortNotice: isShortNotice(hold.date, hold.startTime),
+  }
+}
+
 // ผู้ป่วยมีนัดที่ยังใช้งานอยู่ → 409 พร้อมแนบนัด (หน้าเว็บใช้แสดงป๊อปอัป "คุณมีนัดอยู่แล้ว")
 function throwIfHasActiveAppointment() {
   const appointment = appointmentForApi(getPatientAppointment())
@@ -947,7 +959,13 @@ handlers.push(
       requirePatientPdpa()
       requirePatientProfile()
       clearExpiredHold()
-      const purpose = body?.purpose || 'book'
+      // ไม่ส่ง purpose = จองใหม่ · ค่าอื่นที่ไม่ใช่ book/reschedule → 400 เหมือน server (ขั้น N: M8ก)
+      const purpose = body?.purpose ?? 'book'
+      if (purpose !== 'book' && purpose !== 'reschedule') {
+        throw mockError(400, 'VALIDATION_ERROR', 'purpose ต้องเป็น book หรือ reschedule', {
+          fields: { purpose: 'ต้องเป็น book หรือ reschedule' },
+        })
+      }
       const currentAppointment = appointmentForApi(getPatientAppointment())
       if (purpose === 'book') {
         throwIfHasActiveAppointment()
@@ -956,6 +974,12 @@ handlers.push(
       }
 
       const { slot, date } = findSlotWithDate(body?.slotId)
+
+      // กดคิวที่ตัวเองถืออยู่ซ้ำ → คืน hold เดิม เวลานับต่อ ไม่ต่ออายุ เหมือน server (ขั้น N: M4ข)
+      if (mockHold && mockHold.slotId === slot.slotId) {
+        return { hold: holdForApi(mockHold) }
+      }
+
       const status = patientSlotStatus(date, slot)
       if (status === 'too_late') {
         throw mockError(400, 'TOO_LATE_TO_BOOK', 'ต้องจองก่อนเวลานัดอย่างน้อย 10 นาที')
@@ -990,16 +1014,7 @@ handlers.push(
       releaseMockHold()
       slot.status = 'held'
       mockHold = { slotId: slot.slotId, date, startTime: slot.startTime, expiresAtMs }
-      return {
-        hold: {
-          slotId: slot.slotId,
-          date,
-          startTime: slot.startTime,
-          holdExpiresAt: toBangkokIso(expiresAtMs),
-          changeDeadline: toBangkokIso(changeDeadlineMs(date, slot.startTime)),
-          shortNotice: isShortNotice(date, slot.startTime),
-        },
-      }
+      return { hold: holdForApi(mockHold) }
     },
   },
 
@@ -1097,6 +1112,7 @@ handlers.push(
     path: '/api/me/appointment/cancel',
     handle() {
       requirePatientPdpa()
+      requirePatientProfile() // ต้องกรอกประวัติก่อน เหมือน server (ขั้น N: N4ก)
       clearExpiredHold()
       const appointment = requireChangeableAppointment('ไม่มีนัดที่จะยกเลิก')
 
