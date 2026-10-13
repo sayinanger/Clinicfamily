@@ -5,7 +5,7 @@ import { startMockPatient } from './mock.js'
 // เริ่ม LINE จริงสำเร็จแล้วหรือยัง (โหมดบัตรทดสอบ = ไม่ได้เริ่ม → เรียก liff.isInClient() ไม่ได้)
 let liffReady = false
 
-// เริ่มต้น LIFF และคืนค่าข้อมูลโปรไฟล์ LINE { lineUserId, displayName, pictureUrl }
+// เริ่มต้น LIFF และคืนค่าข้อมูลโปรไฟล์ LINE { lineUserId, displayName, pictureUrl } (โหมดจริง: ชื่อ/รูปเป็น null)
 // เรียกใช้เฉพาะหน้า /liff/... เท่านั้น (LiffLayout เรียกให้)
 export async function initLiff() {
   // โหมดข้อมูลปลอม: ไม่ต่อ LINE เลย ใช้ผู้ป่วยจำลองแทน
@@ -47,11 +47,14 @@ export async function initLiff() {
   // (ต้องเปิด scope "openid" ในหน้าตั้งค่า LIFF ไม่งั้นจะได้ null)
   setLineIdToken(liff.getIDToken())
 
-  const profile = await liff.getProfile()
+  // O12: LIFF app เปิดแค่ scope "openid" (ไม่ขอชื่อ/รูป LINE — เก็บข้อมูลน้อยที่สุดตาม PDPA)
+  // จึงเรียก liff.getProfile() ไม่ได้ (จะได้ error "The permission is not in LIFF app scope.")
+  // → อ่านรหัสผู้ใช้ (sub) จาก ID token แทน · ชื่อ/รูป LINE ไม่มี (หน้าเว็บโหมดจริงไม่ได้ใช้)
+  const decoded = liff.getDecodedIDToken()
   return {
-    lineUserId: profile.userId,
-    displayName: profile.displayName,
-    pictureUrl: profile.pictureUrl,
+    lineUserId: decoded?.sub ?? null,
+    displayName: null,
+    pictureUrl: null,
   }
 }
 

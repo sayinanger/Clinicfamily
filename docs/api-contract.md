@@ -396,6 +396,33 @@ Error: `410 HOLD_EXPIRED` · `409 TOO_LATE_TO_CHANGE` · `404 NOT_FOUND`
 
 ---
 
+## 4.1 🆕 LINE webhook + ข้อความ (รอบ LINE ชุด O)
+
+### POST `/webhook` — LINE ส่งเหตุการณ์มา (ไม่ได้เรียกจากหน้าเว็บ)
+- ตรวจ header `x-line-signature` = HMAC-SHA256(`LINE_CHANNEL_SECRET`, body ดิบ) แบบ base64 → ไม่ตรง/ไม่มี `401 UNAUTHORIZED` "ลายเซ็นไม่ถูกต้อง" · body ไม่ใช่ JSON `400` · ไม่ได้ตั้ง secret → `500`
+- ผ่าน → ตอบ `200 { "ok": true }` ทันที แล้วค่อยตอบผู้ป่วยด้วย Reply API (ไม่นับโควตา) · ปุ่ม Verify ใน Console (events ว่าง) ได้ 200
+- `follow` (แอดเพื่อน) → ข้อความต้อนรับ (O4ก — ปิด Greeting message ใน OA Manager)
+- `postback` `action=status` (ปุ่ม "ดูสถานะคิว", O3ก): ยังไม่ยินยอม / ไม่มีประวัติ → ข้อความ + ลิงก์ `https://liff.line.me/<LIFF_ID>/booking` · มีนัด active (แบบ U8) → วันที่ เวลา สถานะ + เส้นตาย + "กรุณามาถึงก่อนเวลานัด" · ไม่มี → "ตอนนี้คุณไม่มีนัด กดเมนู "จองคิว" เพื่อจอง"
+- `postback` `action=contact` (ปุ่ม "ติดต่อคลินิก", O7ข) → "ติดต่อคลินิกครอบครัว / พิมพ์คำถามไว้ในแชทนี้และรอเจ้าหน้าที่ตอบกลับ หรือ โทร <CLINIC_PHONE>" (เจ้าหน้าที่ตอบในแอป LINE Official Account)
+- `message` (พิมพ์ในแชท), `unfollow` และอื่น ๆ → ไม่ตอบ
+
+### ข้อความ push (U9/U10/U11 — `sendLineMessage`)
+- `LINE_PUSH_ENABLED=true` → ส่งเข้า LINE จริง (นับโควตา) · อื่น ๆ → พิมพ์ลง Terminal (O5ก) · ส่งไม่สำเร็จ (เช่น ผู้ป่วย seed ที่รหัส LINE ปลอม) → การทำรายการยังสำเร็จ + log error (N2ก)
+- ยืนยันจอง / ยืนยันเลื่อน / ดูสถานะ เพิ่มบรรทัด "กรุณามาถึงก่อนเวลานัด" (O2-1ข) · ข้อความธรรมดาทั้งหมด (O1ก)
+
+### Rich Menu (`npm run richmenu` — O9ก)
+| ปุ่ม | การกระทำ |
+|---|---|
+| ประวัติส่วนตัว | เปิด `https://liff.line.me/<LIFF_ID>/profile` |
+| ดูสถานะคิว | postback `action=status` |
+| ยกเลิก/เลื่อนนัด | เปิด `https://liff.line.me/<LIFF_ID>/appointment` |
+| ติดต่อคลินิก | postback `action=contact` |
+| จองคิว (ปุ่มใหญ่ขวา) | เปิด `https://liff.line.me/<LIFF_ID>/booking` |
+
+LIFF app: Endpoint `https://<โดเมน ngrok>/liff` · Size Full · Scope `openid` · Add friend option On (Normal) (O12) — LINE เปิด `/liff?liff.state=/booking` แล้ว `liff.init()` พาไป `/liff/booking`
+
+---
+
 ## 5. ข้อมูลจำลอง (mock) — ข้อตกลง
 - ชื่อ/เบอร์ทั้งหมดเป็นคนสมมติ (ห้ามใช้ชื่อคนจริง) — ชุดเดียวกันนี้ใช้ต่อเป็น seed ใน Supabase สัปดาห์ 3
 - mock เก็บข้อมูลในหน่วยความจำ → กดปุ่มแล้วเปลี่ยนได้ แต่รีเฟรชหน้าแล้วกลับเป็นค่าเริ่มต้น (ยกเว้นสถานะ login ของ staff จำไว้ใน sessionStorage — รีเฟรชแล้วยัง login อยู่จนกว่าจะปิดแท็บ)

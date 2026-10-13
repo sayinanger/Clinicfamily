@@ -11,8 +11,10 @@ import { ensureSlots } from './services/slots.js'
 import healthRouter from './routes/health.js'
 import adminRouter from './routes/admin.js'
 import userRouter from './routes/user.js'
+import webhookRouter from './routes/webhook.js'
 import { warnLineAuthSettings } from './lib/lineAuth.js'
 import { warnClinicSettings } from './lib/rules.js'
+import { warnLineMessagingSettings } from './lib/lineMessages.js'
 
 // ---------- เช็กคีย์ลับของ cookie ----------
 // ไม่มีคีย์ = เซ็น cookie ไม่ได้ → หยุดตั้งแต่ตอนเปิด server (ไม่ใช้ค่าสำรองในโค้ด เพราะ repo เป็น Public ใครก็อ่านได้)
@@ -26,6 +28,8 @@ if (!process.env.SESSION_SECRET) {
 warnLineAuthSettings()
 // เตือนถ้ายังไม่ได้ตั้งเบอร์โทรคลินิก (CLINIC_PHONE) — server ยังเปิดได้ (M7ก)
 warnClinicSettings()
+// เตือนค่าตั้งของ LINE Messaging API (token, secret, LIFF ID, สวิตช์ส่งจริง) — รอบ LINE ชุด O
+warnLineMessagingSettings()
 
 const app = express()
 
@@ -33,6 +37,9 @@ const app = express()
 // (ค่าจาก .env เป็นข้อความเสมอ จึงแปลงเป็นตัวเลขด้วย Number · || = ถ้าทางซ้ายไม่มีค่าให้ใช้ทางขวา)
 // ต้องตรงกับ Vite proxy ใน client/vite.config.js
 const PORT = Number(process.env.PORT) || 3000
+
+// webhook ของ LINE (POST /webhook) — ต้องมาก่อน express.json เพราะต้องอ่าน body แบบดิบไปตรวจลายเซ็น (ดู routes/webhook.js)
+app.use(webhookRouter)
 
 // ให้อ่าน body ที่ส่งมาเป็น JSON ได้ผ่าน req.body (เช่น username/password ตอน login)
 app.use(express.json())

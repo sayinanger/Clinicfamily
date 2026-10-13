@@ -11,7 +11,12 @@ import { query, pool } from '../db.js'
 import { now, toThaiIso, bangkokTime } from '../lib/clock.js'
 import { CHANGE_CUTOFF_MS, CLINIC_PHONE } from '../lib/rules.js'
 import { toProfile } from './users.js'
-import { notifyPatient, bookingConfirmedText, appointmentCancelledText, appointmentRescheduledText } from '../lib/lineMessages.js'
+import {
+  notifyPatient,
+  bookingConfirmedMessage,
+  appointmentCancelledMessage,
+  appointmentRescheduledMessage,
+} from '../lib/lineMessages.js'
 
 // แก้คืนได้ภายใน 5 นาทีหลังกด [ไม่มา]
 export const UNDO_NO_SHOW_MS = 5 * 60 * 1000
@@ -288,7 +293,7 @@ export async function createAppointment(user, body) {
   })
 
   const appointment = toPatientAppointment(row, currentTime)
-  await notifyPatient(user.line_user_id, bookingConfirmedText(toProfile(user), appointment))
+  await notifyPatient(user.line_user_id, bookingConfirmedMessage(toProfile(user), appointment))
   return { appointment }
 }
 
@@ -332,7 +337,7 @@ export async function cancelMyAppointment(user) {
   })
 
   const appointment = { ...toPatientAppointment(active, currentTime), status: 'cancelled', canChange: false }
-  await notifyPatient(user.line_user_id, appointmentCancelledText(appointment))
+  await notifyPatient(user.line_user_id, appointmentCancelledMessage(appointment))
   return { appointment }
 }
 
@@ -382,6 +387,6 @@ export async function rescheduleMyAppointment(user, body) {
   })
 
   const appointment = toPatientAppointment(row, currentTime)
-  await notifyPatient(user.line_user_id, appointmentRescheduledText(appointment, previous))
+  await notifyPatient(user.line_user_id, appointmentRescheduledMessage(appointment, previous))
   return { appointment, previous }
 }
