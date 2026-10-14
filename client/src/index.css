@@ -54,6 +54,10 @@
   /* ปุ่ม [แก้คืน] และปุ่มที่กดไม่ได้ / เครื่องหมาย — */
   --color-staff-undo: #404040;
   --color-staff-disabled: #CBCBCB;
+  /* ปุ่มส่งเตือนในโหมดเดโม + ป้ายโหมดเดโม (ชุด P) — ส้มเดียวกับหัวการ์ดเตือนใน LINE */
+  --color-staff-remind: #B5651D;
+  --color-staff-remind-soft: #FFF7EF;
+  --color-staff-remind-border: #F3C99B;
 
   /* ===== หน้าจัดการเวลา (Figma 255:203) ===== */
   /* เขียว — ปุ่ม [เปิด] + จุดสถานะ "เปิดรับการจอง" */

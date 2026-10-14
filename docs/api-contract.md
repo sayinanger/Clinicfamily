@@ -392,7 +392,17 @@ Error: `410 HOLD_EXPIRED` · `409 TOO_LATE_TO_CHANGE` · `404 NOT_FOUND`
 
 ### D1. POST `/api/demo/send-reminders` — ส่งแจ้งเตือนทันที
 ส่ง `{ "appointmentId": 12, "type": "before_2h" }` (`type`: `day_before` | `before_2h`)
-ได้ `200` `{ "sent": true }` · ปิดโหมดเดโม → `404 NOT_FOUND`
+ได้ `200` `{ "sent": true, "status": "sent", "sentAt": "2026-10-18T05:20:00.000+07:00" }` · ปิดโหมดเดโม → `404 NOT_FOUND`
+- 🆕 (ชุด P) ต้อง login staff (`401` เหมือน S4) · เรียกจากปุ่ม [เตือนวันก่อน] [เตือน 2 ชม.] คอลัมน์ "ส่งเตือน (เดโม)" หน้ารายการนัด (แสดงเมื่อ `GET /api/health` → `demo: true` — O18ก, P3ก) + ป้าย "โหมดเดโม · เวลา …" (P5ก)
+- ส่งการ์ดเตือนหัวส้มทันที **ไม่ดูกติกาของ cron** (นัดกระชั้น/เลยเวลาส่ง/จองหลัง 07:00) เช็กแค่นัดเป็น booked (P4ก)
+- บันทึก/อัปเดตแถว notifications ของ (นัด + แบบ) — กดซ้ำได้ อัปเดต `sent_at` (O17ก)
+- LINE ไม่รับ (เช่น ผู้ป่วย seed รหัส LINE ปลอม) → `200 { "sent": false, "status": "failed", ... }` + บันทึก failed (P2ก — หน้าเว็บแสดงกล่องแดง)
+- Error: `appointmentId` ไม่ใช่จำนวนเต็มบวก / `type` ไม่ใช่ 2 แบบ → `400 VALIDATION_ERROR` + `fields` · ไม่มีนัด → `404 NOT_FOUND` · นัดไม่ใช่ booked → `409 INVALID_STATUS`
+
+### 🆕 cron (ชุด P — `server/lib/reminders.js`, node-cron ทุก 1 นาที เวลาไทย)
+- ส่งการ์ดเตือน `day_before` (07:00 วันก่อนนัด) และ `before_2h` (2 ชม.ก่อนนัด) เฉพาะนัด booked · ข้ามนัดกระชั้น (เวลานัด − max(created_at, updated_at) < 3 ชม.) · ข้ามถ้าจอง/เลื่อนหลังเวลาส่ง · ข้ามถ้าเลยเวลาส่ง ≥ 10 นาที · มีแถว notifications แล้ว (sent/failed) → ไม่ส่งซ้ำ
+- ใช้เวลาจาก clock.js (ตาม DEMO_NOW — O15ก) · `LINE_PUSH_ENABLED` ไม่ใช่ true → พิมพ์ลง Terminal + บันทึก `sent` (P6ก)
+- ล้างคิว held ที่ `hold_expires_at ≤ ตอนนี้` → available (M6ก)
 
 ---
 

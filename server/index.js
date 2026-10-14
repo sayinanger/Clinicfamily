@@ -12,9 +12,11 @@ import healthRouter from './routes/health.js'
 import adminRouter from './routes/admin.js'
 import userRouter from './routes/user.js'
 import webhookRouter from './routes/webhook.js'
+import demoRouter from './routes/demo.js'
 import { warnLineAuthSettings } from './lib/lineAuth.js'
 import { warnClinicSettings } from './lib/rules.js'
 import { warnLineMessagingSettings } from './lib/lineMessages.js'
+import { startScheduler } from './lib/reminders.js'
 
 // ---------- เช็กคีย์ลับของ cookie ----------
 // ไม่มีคีย์ = เซ็น cookie ไม่ได้ → หยุดตั้งแต่ตอนเปิด server (ไม่ใช้ค่าสำรองในโค้ด เพราะ repo เป็น Public ใครก็อ่านได้)
@@ -71,6 +73,8 @@ app.use('/api', healthRouter)
 app.use('/api', adminRouter)
 // API ฝั่งผู้ป่วย U1–U11 — ยืนยันตัวตนด้วย LINE ID token
 app.use('/api', userRouter)
+// API โหมดเดโม D1 (ส่งเตือนทันที) — ปิดโหมดเดโมแล้วตอบ 404 (ชุด P)
+app.use('/api', demoRouter)
 
 // ---------- ไม่เจอ API ที่ขอ ----------
 // มาถึงตรงนี้แปลว่าไม่มีเส้นทางไหนตรงเลย → ตอบ 404 ตามรูปแบบ error ใน docs/api-contract.md
@@ -99,4 +103,6 @@ try {
 // ---------- เริ่มรับคำขอ ----------
 app.listen(PORT, () => {
   console.log(`Server พร้อมแล้ว → http://localhost:${PORT}/api/health`)
+  // เริ่มตัวตั้งเวลา ทุก 1 นาที: ส่งการ์ดเตือนก่อนนัด + ล้างคิวที่ถือค้าง (ชุด P — lib/reminders.js)
+  startScheduler()
 })

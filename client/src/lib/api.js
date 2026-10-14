@@ -11,8 +11,12 @@ export const USE_MOCK_ADMIN = import.meta.env.VITE_USE_MOCK_ADMIN === 'true'
 export const USE_MOCK_LIFF = import.meta.env.VITE_USE_MOCK_LIFF === 'true'
 
 // API นี้ใช้ข้อมูลปลอมไหม — ดูจาก path ว่าเป็น API ของ staff หรือของผู้ป่วย
+// /api/health และ /api/demo/ ใช้จากหน้า staff (ชุด P) → ตามสวิตช์ฝั่ง staff
+function isStaffPagePath(path) {
+  return path.startsWith('/api/admin/') || path.startsWith('/api/demo/') || path === '/api/health'
+}
 function usesMock(path) {
-  return path.startsWith('/api/admin/') ? USE_MOCK_ADMIN : USE_MOCK_LIFF
+  return isStaffPagePath(path) ? USE_MOCK_ADMIN : USE_MOCK_LIFF
 }
 
 // ข้อความเมื่อติดต่อ server ไม่ได้ (เช่น ลืมรัน npm run dev ในโฟลเดอร์ server) (ขั้น K: K2ข)
@@ -31,7 +35,8 @@ export function setLineIdToken(token) {
 // API ของ staff ที่ถ้าได้ 401 แปลว่า session หมดอายุ → ต้องพากลับหน้า login
 // ยกเว้น login (401 = รหัสผิด) และ /api/admin/me (AdminLayout จัดการเอง)
 function isStaffSessionApi(path) {
-  return path.startsWith('/api/admin/') && !path.startsWith('/api/admin/login') && !path.startsWith('/api/admin/me')
+  const staffApi = path.startsWith('/api/admin/') || path.startsWith('/api/demo/')
+  return staffApi && !path.startsWith('/api/admin/login') && !path.startsWith('/api/admin/me')
 }
 
 // ฟังก์ชันกลางสำหรับเรียก API
@@ -134,6 +139,18 @@ export function markNoShow(appointmentId) {
 // S6 — กดปุ่ม [แก้คืน] (ยกเลิกการกด "ไม่มา" ภายใน 5 นาที)
 export function undoNoShow(appointmentId) {
   return apiRequest(`/api/admin/appointments/${appointmentId}/no-show`, { method: 'DELETE' })
+}
+
+// health — เช็ก server + โหมดเดโม (ชุด P: หน้ารายการนัดใช้ demo/now ตัดสินว่าจะแสดงปุ่มส่งเตือนไหม — O18ก)
+// ได้ { ok, db, now, demo, testToken }
+export function getHealth() {
+  return apiRequest('/api/health')
+}
+
+// D1 — ปุ่มเดโม ส่งการ์ดเตือนทันที (type = 'day_before' | 'before_2h')
+// ได้ { sent, status, sentAt } · LINE ไม่รับ → sent: false, status: 'failed' (P2ก — ไม่ใช่ error)
+export function sendDemoReminder(appointmentId, type) {
+  return apiRequest('/api/demo/send-reminders', { method: 'POST', body: { appointmentId, type } })
 }
 
 // S7 — เวลาทั้งหมดของวันที่เลือก (12 คิว) สำหรับหน้าจัดการเวลา

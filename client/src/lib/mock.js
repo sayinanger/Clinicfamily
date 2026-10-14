@@ -63,6 +63,11 @@ function isBeyondBookingRange(dateString) {
 
 // เวลาหมดสิทธิ์แก้คืน = ตอนนี้ + 5 นาที ในรูปแบบ ISO เวลาไทย เช่น '2026-10-03T08:10:00+07:00'
 // ใช้นาฬิกาจำลอง mockNowMs() ให้ตรงกับ getNowMs() ที่หน้ารายการนัดใช้เทียบ (ข้อ 1 แก้ 2026-10-06)
+// เวลาจำลองตอนนี้เป็นข้อความเวลาไทย (ชุด P)
+function nowIso() {
+  return new Date(mockNowMs() + 7 * 60 * 60 * 1000).toISOString().slice(0, 19) + '+07:00'
+}
+
 function fiveMinutesFromNowIso() {
   const bangkokMs = mockNowMs() + 5 * 60 * 1000 + 7 * 60 * 60 * 1000
   return new Date(bangkokMs).toISOString().slice(0, 19) + '+07:00'
@@ -277,6 +282,33 @@ const handlers = [
       appointment.canUndoNoShow = false
       appointment.undoNoShowUntil = null
       return appointment
+    },
+  },
+
+  // health — โหมดข้อมูลปลอมถือว่าเปิดโหมดเดโม (ให้เห็นปุ่มส่งเตือนในหน้ารายการนัด — ชุด P)
+  {
+    method: 'GET',
+    path: '/api/health',
+    handle() {
+      return { ok: true, db: null, now: nowIso(), demo: true, testToken: false }
+    },
+  },
+
+  // D1 — ปุ่มเดโม ส่งการ์ดเตือนทันที (ข้อมูลปลอม: นัดเลขคี่ = ส่งสำเร็จ, เลขคู่ = LINE ไม่รับ ให้เห็นทั้ง 2 แบบ)
+  {
+    method: 'POST',
+    path: '/api/demo/send-reminders',
+    handle({ body }) {
+      requireStaffLogin()
+      if (!['day_before', 'before_2h'].includes(body?.type)) {
+        throw mockError(400, 'VALIDATION_ERROR', 'ข้อมูลไม่ถูกต้อง', { fields: { type: 'ต้องเป็น day_before หรือ before_2h' } })
+      }
+      const appointment = findAppointment(body.appointmentId)
+      if (appointment.status !== 'booked') {
+        throw mockError(409, 'INVALID_STATUS', 'นัดนี้ไม่อยู่ในสถานะยืนยันแล้ว')
+      }
+      const sent = appointment.appointmentId % 2 === 1
+      return { sent, status: sent ? 'sent' : 'failed', sentAt: nowIso() }
     },
   },
 

@@ -38,7 +38,7 @@ export function warnLineMessagingSettings() {
     console.warn('⚠️  ยังไม่ได้ตั้ง LIFF_ID ใน server/.env → ข้อความที่ต้องมีลิงก์หน้าจองจะไม่มีลิงก์')
   }
   if (!PUSH_ENABLED) {
-    console.log('ℹ️  LINE_PUSH_ENABLED ไม่ใช่ true → ข้อความยืนยันจอง/ยกเลิก/เลื่อน พิมพ์ลง Terminal (ไม่ส่งเข้า LINE)')
+    console.log('ℹ️  LINE_PUSH_ENABLED ไม่ใช่ true → ข้อความยืนยันจอง/ยกเลิก/เลื่อน และการ์ดเตือน พิมพ์ลง Terminal (ไม่ส่งเข้า LINE)')
   }
 }
 
@@ -246,6 +246,34 @@ export function appointmentStatusMessage(appointment) {
     title: 'นัดของคุณ',
     altText: `นัดของคุณ ${shortDateText(appointment.date)} ${appointment.startTime} น.`,
     body: [...appointmentTimeTexts(appointment), statusRow('ยืนยันแล้ว'), SEPARATOR, ...changeRuleTexts(appointment)],
+  })
+}
+
+// ---------- การ์ดเตือนก่อนนัด (ชุด P — cron + ปุ่มเดโม D1) ----------
+// type = 'day_before' (07:00 วันก่อนนัด) | 'before_2h' (2 ชม.ก่อนนัด) · หัวการ์ดสีส้ม
+const REMINDER_TITLES = {
+  day_before: 'พรุ่งนี้มีนัด',
+  before_2h: 'อีก 2 ชั่วโมงถึงเวลานัด',
+}
+export const REMINDER_TYPES = Object.keys(REMINDER_TITLES)
+
+// profile = { firstName, lastName } · appointment = แบบ U8 (date, startTime, endTime, canChange, changeDeadline)
+export function reminderMessage(type, profile, appointment) {
+  const title = REMINDER_TITLES[type]
+  const name = `${profile.firstName ?? ''} ${profile.lastName ?? ''}`.trim()
+  return appointmentCard({
+    title,
+    headerColor: COLOR.orange,
+    altText: `${title} ${shortDateText(appointment.date)} ${appointment.startTime} น.`,
+    body: [
+      ...appointmentTimeTexts(appointment),
+      ...(name ? [cardRow('ชื่อ', name)] : []),
+      statusRow('ยืนยันแล้ว'),
+      SEPARATOR,
+      ...changeRuleTexts(appointment),
+      // ยังยกเลิก/เลื่อนเองได้ → บอกทางโทรด้วย · เลยเส้นตายแล้ว บรรทัดแดงด้านบนบอก "โทรแจ้งคลินิก" แล้ว เติมแค่เบอร์
+      cardText(appointment.canChange ? `หากมาไม่ได้ กรุณาโทรแจ้งคลินิก ${CLINIC_PHONE}` : `โทร ${CLINIC_PHONE}`),
+    ],
   })
 }
 

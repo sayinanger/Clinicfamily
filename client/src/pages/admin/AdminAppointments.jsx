@@ -1,13 +1,36 @@
 import { useEffect, useRef, useState } from 'react'
-import { getAdminAppointments, markNoShow, undoNoShow, getNowMs } from '../../lib/api.js'
+import { getAdminAppointments, markNoShow, undoNoShow, getNowMs, getHealth, sendDemoReminder } from '../../lib/api.js'
 import { formatThaiDateShort } from '../../lib/format.js'
 import DatePickerBox from '../../components/DatePickerBox.jsx'
 
 // หน้าดูรายการนัดหมาย — ตาม Figma "ดูรายการนัดหมาย (v2)" (255:52)
 // API ที่ใช้: S4 ดูรายการ, S5 กด [ไม่มา], S6 กด [แก้คืน] (ดู docs/api-contract.md)
+// ชุด P: โหมดเดโม (health.demo = true — O18ก) → ป้าย "โหมดเดโม · เวลา …" (P5ก) + คอลัมน์ "ส่งเตือน (เดโม)" (P3ก)
+//   ปุ่ม [เตือนวันก่อน] [เตือน 2 ชม.] ในแถวที่ยืนยันแล้ว → D1 ส่งการ์ดเตือนทันที → กล่องเขียว/แดงเหนือตาราง (P2ก)
 // ปรับความสูงแถวให้เล็กกว่า Figma เพื่อให้ 12 คิวอยู่ในจอ MacBook Air โดยไม่ต้องเลื่อน
 
 // คำและสีของแต่ละสถานะ
+// ชื่อการ์ดเตือนแต่ละแบบ (ตรงกับหัวการ์ดใน server/lib/lineMessages.js) + คำบนปุ่ม
+const reminderTypes = [
+  { type: 'day_before', button: 'เตือนวันก่อน', title: 'พรุ่งนี้มีนัด' },
+  { type: 'before_2h', button: 'เตือน 2 ชม.', title: 'อีก 2 ชั่วโมงถึงเวลานัด' },
+]
+
+// ความกว้างคอลัมน์ (สัดส่วนตาม Figma) — โหมดเดโมเพิ่มคอลัมน์ "ส่งเตือน (เดโม)" ท้ายสุด แล้วบีบคอลัมน์อื่น
+const NORMAL_COLUMNS = ['11.7%', '22.8%', '15.6%', '12.5%', '10.4%', '14.6%', '12.4%']
+const DEMO_COLUMNS = ['7%', '17%', '13%', '12.5%', '7%', '10.5%', '10%', '23%']
+
+// เวลา (มิลลิวินาที) → '18 ต.ค. 05:20' เวลาไทย (ใช้ในป้ายโหมดเดโม)
+function formatDemoTime(ms) {
+  return new Date(ms).toLocaleString('th-TH', {
+    timeZone: 'Asia/Bangkok',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 const statusLabels = {
   booked: { text: 'ยืนยันแล้ว', color: 'text-staff-ok' },
   no_show: { text: 'ไม่มา', color: 'text-staff-orange' },
@@ -31,6 +54,12 @@ export default function AdminAppointments() {
   // วันที่ที่กำลังดูอยู่ "ตอนนี้" — ใช้เช็กตอนโหลดเงียบ ๆ ว่าผู้ใช้เปลี่ยนวันไปแล้วหรือยัง
   // (useRef = ตัวแปรที่จำค่าไว้ได้ แต่เปลี่ยนแล้วไม่ทำให้หน้าวาดใหม่)
   const currentDateRef = useRef('')
+  // true = server เปิดโหมดเดโมอยู่ (จาก /api/health) → แสดงป้าย + ปุ่มส่งเตือน
+  const [demo, setDemo] = useState(false)
+  // ปุ่มส่งเตือนที่กำลังกดอยู่ เช่น '12-before_2h' (กันกดซ้ำ) — null = ไม่มี
+  const [busyReminder, setBusyReminder] = useState(null)
+  // ผลการกดส่งเตือนล่าสุด { ok: true/false, text } — null = ไม่แสดงกล่อง
+  const [reminderResult, setReminderResult] = useState(null)
 
   // โหลดรายการนัด — selectedDate ว่าง = ให้ server เลือกวันเปิดทำการถัดไป
   // silent = true → โหลดเงียบ ๆ (ไม่ขึ้น "กำลังโหลด..." ไม่ลบข้อความผิดพลาดเดิม) ใช้ตอนโหลดใหม่เองทุก 30 วินาที
@@ -38,6 +67,7 @@ export default function AdminAppointments() {
     if (!silent) {
       setLoading(true)
       setErrorMessage('')
+      setReminderResult(null) // เปลี่ยนวัน → ล้างกล่องผลส่งเตือน
     }
     try {
       const data = await getAdminAppointments(selectedDate)
@@ -53,9 +83,13 @@ export default function AdminAppointments() {
     }
   }
 
-  // เปิดหน้ามาครั้งแรก → โหลดวันเปิดทำการถัดไป
+  // เปิดหน้ามาครั้งแรก → โหลดวันเปิดทำการถัดไป + ถาม server ว่าเปิดโหมดเดโมไหม
+  // (ถามไม่สำเร็จ → ถือว่าไม่ใช่โหมดเดโม ไม่แสดงปุ่ม — หน้ารายการนัดยังใช้ได้ปกติ)
   useEffect(() => {
     loadAppointments('')
+    getHealth()
+      .then((data) => setDemo(data.demo === true))
+      .catch(() => setDemo(false))
   }, [])
 
   // นาฬิกาเดินทุก 10 วินาที (หยุดเมื่อออกจากหน้า)
@@ -87,6 +121,51 @@ export default function AdminAppointments() {
     } finally {
       setBusyId(null)
     }
+  }
+
+  // กดปุ่มส่งเตือน (D1) → กล่องเขียว (ส่งแล้ว) / แดง (LINE ไม่รับ) เหนือตาราง
+  async function handleSendReminder(item, reminder) {
+    const key = `${item.appointmentId}-${reminder.type}`
+    const name = `${item.firstName ?? ''} ${item.lastName ?? ''}`.trim() || 'ผู้ป่วย'
+    setBusyReminder(key)
+    setErrorMessage('')
+    setReminderResult(null)
+    try {
+      const result = await sendDemoReminder(item.appointmentId, reminder.type)
+      setReminderResult(
+        result.sent
+          ? { ok: true, text: `ส่งการ์ด "${reminder.title}" ให้ ${name} (${formatThaiDateShort(item.date)} ${item.startTime}) แล้ว` }
+          : { ok: false, text: `ส่งการ์ด "${reminder.title}" ให้ ${name} ไม่สำเร็จ — LINE ไม่รับข้อความ · บันทึกเป็น failed แล้ว` }
+      )
+    } catch (error) {
+      setErrorMessage(error.message) // เช่น นัดถูกยกเลิกไปแล้ว (409) → โหลดใหม่ให้ตรงกับ server
+      loadAppointments(date)
+    } finally {
+      setBusyReminder(null)
+    }
+  }
+
+  // ปุ่มในคอลัมน์ "ส่งเตือน (เดโม)" — เฉพาะนัดที่ยืนยันแล้ว (อื่น ๆ ขีด "—")
+  function renderReminderButtons(item) {
+    if (item.status !== 'booked') return <span className="text-staff-disabled">—</span>
+    return (
+      <div className="flex gap-1.5">
+        {reminderTypes.map((reminder) => {
+          const busy = busyReminder === `${item.appointmentId}-${reminder.type}`
+          return (
+            <button
+              key={reminder.type}
+              type="button"
+              disabled={busyReminder !== null}
+              onClick={() => handleSendReminder(item, reminder)}
+              className="h-[26px] rounded-md border border-staff-remind bg-staff-remind-soft px-2 text-[13px] whitespace-nowrap text-staff-remind hover:bg-orange-100 disabled:opacity-60"
+            >
+              {busy ? 'กำลังส่ง…' : reminder.button}
+            </button>
+          )
+        })}
+      </div>
+    )
   }
 
   // ปุ่มในคอลัมน์ "จัดการ" ของแต่ละแถว
@@ -140,7 +219,15 @@ export default function AdminAppointments() {
   return (
     <div>
       {/* หัวข้อหน้า */}
-      <h1 className="text-2xl leading-7 font-bold text-black">ดูรายการนัดหมาย</h1>
+      <div className="flex items-center gap-3">
+        <h1 className="text-2xl leading-7 font-bold text-black">ดูรายการนัดหมาย</h1>
+        {/* ป้ายโหมดเดโม (P5ก) — เวลาเดโมของ server เดินตามนาฬิกาในหน้านี้ */}
+        {demo && (
+          <span className="rounded-full border border-staff-remind-border bg-staff-remind-soft px-2.5 py-0.5 text-xs text-staff-remind">
+            โหมดเดโม · เวลา {formatDemoTime(now)}
+          </span>
+        )}
+      </div>
 
       {/* แถวเลือกวันที่ */}
       <div className="mt-2 flex items-center gap-6">
@@ -153,40 +240,51 @@ export default function AdminAppointments() {
       {/* ข้อความผิดพลาด (ไม่มีใน Figma) */}
       {errorMessage && <p className="mt-3 text-sm text-staff-red">{errorMessage}</p>}
 
+      {/* ผลการกดส่งเตือน (โหมดเดโม) */}
+      {reminderResult && (
+        <div
+          className={`mt-2.5 rounded-lg border px-3 py-2 text-sm ${
+            reminderResult.ok
+              ? 'border-primary-light bg-primary-soft text-primary'
+              : 'border-liff-red-border bg-liff-red-bg text-liff-red'
+          }`}
+        >
+          {reminderResult.ok ? '✓ ' : '✕ '}
+          {reminderResult.text}
+        </div>
+      )}
+
       {/* ตารางรายการนัด */}
       <div className="mt-3 overflow-hidden rounded-xl border border-staff-table-border bg-white">
         <table className="w-full table-fixed text-left text-[15px] text-black">
-          {/* ความกว้างแต่ละคอลัมน์ (สัดส่วนตาม Figma) */}
+          {/* ความกว้างแต่ละคอลัมน์ (โหมดเดโมมี 8 คอลัมน์) */}
           <colgroup>
-            <col className="w-[11.7%]" />
-            <col className="w-[22.8%]" />
-            <col className="w-[15.6%]" />
-            <col className="w-[12.5%]" />
-            <col className="w-[10.4%]" />
-            <col className="w-[14.6%]" />
-            <col className="w-[12.4%]" />
+            {(demo ? DEMO_COLUMNS : NORMAL_COLUMNS).map((width, index) => (
+              <col key={index} style={{ width }} />
+            ))}
           </colgroup>
           <thead className="bg-staff-table-head">
             <tr className="h-10">
               <th className="text-center font-medium">ลำดับ</th>
-              <th className="pl-9 font-medium">ชื่อผู้จอง</th>
+              <th className={`${demo ? 'pl-6' : 'pl-9'} font-medium`}>ชื่อผู้จอง</th>
               <th className="font-medium">เบอร์โทร</th>
               <th className="font-medium">วันที่</th>
               <th className="font-medium">เวลา</th>
               <th className="font-medium">สถานะ</th>
               <th className="pl-[5px] font-medium">จัดการ</th>
+              {demo && <th className="font-medium">ส่งเตือน (เดโม)</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-staff-border">
             {loading ? (
               <tr className="h-10">
-                <td colSpan={7} className="text-center text-staff-subtle">
+                <td colSpan={demo ? 8 : 7} className="text-center text-staff-subtle">
                   กำลังโหลด...
                 </td>
               </tr>
             ) : appointments.length === 0 ? (
               <tr className="h-10">
-                <td colSpan={7} className="text-center text-staff-subtle">
+                <td colSpan={demo ? 8 : 7} className="text-center text-staff-subtle">
                   ไม่มีนัดหมายในวันนี้
                 </td>
               </tr>
@@ -194,7 +292,7 @@ export default function AdminAppointments() {
               appointments.map((item, index) => (
                 <tr key={item.appointmentId} className="h-10">
                   <td className="text-center">{index + 1}</td>
-                  <td className="truncate pl-9">
+                  <td className={`truncate ${demo ? 'pl-6' : 'pl-9'}`}>
                     {/* ผู้ป่วยที่ถูกล้างข้อมูล (PDPA) server ส่งชื่อ/เบอร์เป็น null → แสดง "—" */}
                     {item.firstName || item.lastName ? `${item.firstName ?? ''} ${item.lastName ?? ''}`.trim() : '—'}
                   </td>
@@ -203,6 +301,7 @@ export default function AdminAppointments() {
                   <td>{item.startTime}</td>
                   <td className={`font-medium ${statusLabels[item.status]?.color}`}>{statusLabels[item.status]?.text}</td>
                   <td>{renderAction(item)}</td>
+                  {demo && <td>{renderReminderButtons(item)}</td>}
                 </tr>
               ))
             )}
