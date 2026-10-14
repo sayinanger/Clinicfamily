@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom'
-import { saveProfile } from '../../lib/api.js'
+import { saveProfile, USE_MOCK_LIFF } from '../../lib/api.js'
 import { THAI_MONTHS } from '../../lib/format.js'
+import { canCloseLiff, closeLiff } from '../../lib/liff.js'
+import { Popup, PopupTitle, PopupText, PopupButton } from '../../components/Popup.jsx'
 
 // ตัวเลือกเพศ (value = ค่าที่ส่งให้ server ตาม API contract)
 const GENDER_OPTIONS = [
@@ -50,7 +52,7 @@ function formToBirthDate(form) {
 
 // หน้าประวัติส่วนตัว (Figma 274:215) — ใช้ทั้งกรอกครั้งแรกและแก้ไข
 // ถ้าเปิดมาพร้อม ?next=... (เช่น จากเมนูจองคิว) บันทึกเสร็จจะไปหน้านั้นต่อ
-// ถ้าไม่มี → แสดง "บันทึกแล้ว" อยู่หน้าเดิม
+// ถ้าไม่มี (เปิดจากเมนูประวัติส่วนตัว) → ป๊อปอัป "บันทึกประวัติแล้ว" + ปุ่ม [ปิด] กลับแชท LINE (F9ก, 15 ต.ค.)
 export default function LiffProfile() {
   const { me, setMe } = useOutletContext()
   const navigate = useNavigate()
@@ -62,6 +64,7 @@ export default function LiffProfile() {
   const [error, setError] = useState('') // ข้อความผิดรวม (เช่น server ล่ม)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false) // true = แสดงกล่อง "บันทึกแล้ว"
+  const [showSavedPopup, setShowSavedPopup] = useState(false) // true = แสดงป๊อปอัป "บันทึกประวัติแล้ว"
 
   // เปลี่ยนค่าช่องใดช่องหนึ่ง เช่น updateField('firstName', 'สมหญิง')
   // พิมพ์ใหม่แล้ว → ลบข้อความผิดของช่องนั้น + ซ่อน "บันทึกแล้ว"
@@ -100,6 +103,7 @@ export default function LiffProfile() {
         return
       }
       setSaved(true)
+      setShowSavedPopup(true)
     } catch (err) {
       if (err.code === 'VALIDATION_ERROR') {
         setFieldErrors(err.data?.fields || {}) // ข้อความแดงใต้ช่องที่ผิด
@@ -108,6 +112,19 @@ export default function LiffProfile() {
       }
     }
     setSaving(false)
+  }
+
+  // ป๊อปอัปบันทึกแล้ว: กด [ปิด] (เหมือนป๊อปอัปจองสำเร็จในหน้าจองคิว)
+  // ในแอป LINE = ปิดหน้าต่าง LIFF กลับแชท / ทดสอบบนเบราว์เซอร์ (ข้อมูลปลอม) = กลับเมนูทดสอบ
+  // เปิดในเบราว์เซอร์ธรรมดา (ปิดแท็บเองไม่ได้) = ปิดป๊อปอัป อยู่หน้าเดิมพร้อมกล่อง "บันทึกแล้ว"
+  function handleSavedClose() {
+    if (USE_MOCK_LIFF) {
+      navigate('/liff')
+    } else if (canCloseLiff()) {
+      closeLiff()
+    } else {
+      setShowSavedPopup(false)
+    }
   }
 
   const maxDay = daysInMonth(Number(form.month), Number(form.yearBE) - 543)
@@ -240,6 +257,18 @@ export default function LiffProfile() {
           {saving ? 'กำลังบันทึก...' : 'บันทึก'}
         </button>
       </form>
+
+      {/* บันทึกสำเร็จ (เปิดจากเมนูประวัติส่วนตัว) — F9ก/F11ก 15 ต.ค. ตาม mock ที่ผู้ใช้ดูแล้ว */}
+      {showSavedPopup && (
+        <Popup>
+          <PopupTitle color="text-liff-success">บันทึกประวัติแล้ว</PopupTitle>
+          <PopupText>ข้อมูลของคุณถูกบันทึกเรียบร้อย</PopupText>
+          <p className="w-full text-[16px] leading-[1.4] text-[#555555]">กด [ปิด] เพื่อกลับไปที่แชท LINE</p>
+          <div className="pt-[10px]">
+            <PopupButton onClick={handleSavedClose}>ปิด</PopupButton>
+          </div>
+        </Popup>
+      )}
     </div>
   )
 }
