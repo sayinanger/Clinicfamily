@@ -41,3 +41,20 @@ src/
   pages/admin/      หน้าของ staff
   components/       ชิ้นส่วนที่ใช้ซ้ำ (ปุ่ม, การ์ด, popup)
 ```
+
+## ขึ้น Render (ระบบเปิดตลอด)
+
+Render รันโปรแกรมเดียว: server (Express) เสิร์ฟทั้ง API, webhook และหน้าเว็บที่ build แล้ว (`client/dist`) → โดเมนเดียว cookie ของ staff ใช้ได้
+
+| ช่องในหน้า Render | ค่า |
+| --- | --- |
+| Root Directory | (เว้นว่าง) |
+| Build Command | `npm run build` |
+| Start Command | `npm start` |
+| Health Check Path | `/api/health` |
+
+- Node 24 กำหนดใน `package.json` ที่โฟลเดอร์บนสุด (`engines`)
+- ค่าทั้งหมดใส่ในแท็บ Environment ของ Render (ไม่มีไฟล์ `.env` บน Render) — ค่า `VITE_...` ต้องมีตอน build ด้วย
+- เปลี่ยนค่าใน Environment → Save → Render รีสตาร์ทเอง (~1–2 นาที) · push โค้ดใหม่ → Render build ใหม่เอง (~2–5 นาที)
+- LINE Developers: Webhook URL = `https://<โดเมน Render>/webhook` · LIFF Endpoint URL = `https://<โดเมน Render>/liff` · Rich Menu ใช้ลิงก์ `liff.line.me` จึงไม่ต้องตั้งใหม่
+- บน Mac ยังพัฒนาแบบเดิมได้ (`npm run dev` ใน `server/` และ `client/`) แต่อย่าเปิด server บน Mac ค้างไว้ เพราะ cron จะทำงานซ้อนกับ Render

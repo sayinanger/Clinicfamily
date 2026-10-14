@@ -1,8 +1,11 @@
 // จุดเริ่มต้นของ server (Express)
 // รันด้วย npm run dev (ในโฟลเดอร์ server/) → เปิดที่ http://localhost:3000
 // ค่าตั้งใน server/.env ถูกอ่านเข้า process.env ด้วย --env-file-if-exists (ดู scripts ใน package.json)
-// หน้าเว็บ (Vite พอร์ต 5173) ส่งต่อทุกคำขอ /api มาที่นี่ (ดู client/vite.config.js)
+// ตอนพัฒนาบน Mac: หน้าเว็บ (Vite พอร์ต 5173) ส่งต่อทุกคำขอ /api มาที่นี่ (ดู client/vite.config.js)
+// บน Render: server ตัวนี้เสิร์ฟหน้าเว็บที่ build แล้ว (client/dist) เองด้วย → โปรแกรมเดียว โดเมนเดียว (ดูหัวข้อ "หน้าเว็บ" ด้านล่าง)
 
+import { existsSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import express from 'express'
 import cookieSession from 'cookie-session'
 import { now, toThaiIso } from './lib/clock.js'
@@ -76,6 +79,25 @@ app.use('/api', userRouter)
 // API โหมดเดโม D1 (ส่งเตือนทันที) — ปิดโหมดเดโมแล้วตอบ 404 (ชุด P)
 app.use('/api', demoRouter)
 
+// ---------- หน้าเว็บ (Render) ----------
+// ถ้ามีโฟลเดอร์ client/dist (สร้างด้วย npm run build ที่โฟลเดอร์บนสุด) → server เสิร์ฟหน้าเว็บให้เอง
+// - ไฟล์จริง (js, css, รูป) ส่งตามชื่อไฟล์
+// - เส้นทางหน้าเว็บ เช่น /liff/booking, /admin/slots → ส่ง index.html แล้ว React Router เลือกหน้าเอง
+// - /api และ /webhook ไม่ส่งหน้าเว็บ (ไม่เจอ → ตอบ 404 แบบ JSON ด้านล่างเหมือนเดิม)
+// บน Mac ตอน npm run dev ปกติไม่มี client/dist → ข้ามส่วนนี้ ใช้หน้าเว็บจาก Vite เหมือนเดิม
+const CLIENT_DIST = fileURLToPath(new URL('../client/dist', import.meta.url))
+const CLIENT_INDEX = `${CLIENT_DIST}/index.html`
+const HAS_CLIENT_BUILD = existsSync(CLIENT_INDEX)
+if (HAS_CLIENT_BUILD) {
+  app.use(express.static(CLIENT_DIST))
+  app.use((req, res, next) => {
+    const isPage = req.method === 'GET' || req.method === 'HEAD'
+    const isServerPath = /^\/(api|webhook)(\/|$)/.test(req.path)
+    if (!isPage || isServerPath) return next()
+    res.sendFile(CLIENT_INDEX)
+  })
+}
+
 // ---------- ไม่เจอ API ที่ขอ ----------
 // มาถึงตรงนี้แปลว่าไม่มีเส้นทางไหนตรงเลย → ตอบ 404 ตามรูปแบบ error ใน docs/api-contract.md
 app.use((req, res) => {
@@ -103,6 +125,7 @@ try {
 // ---------- เริ่มรับคำขอ ----------
 app.listen(PORT, () => {
   console.log(`Server พร้อมแล้ว → http://localhost:${PORT}/api/health`)
+  if (HAS_CLIENT_BUILD) console.log('🌐 เสิร์ฟหน้าเว็บจาก client/dist ด้วย (/admin, /liff)')
   // เริ่มตัวตั้งเวลา ทุก 1 นาที: ส่งการ์ดเตือนก่อนนัด + ล้างคิวที่ถือค้าง (ชุด P — lib/reminders.js)
   startScheduler()
 })

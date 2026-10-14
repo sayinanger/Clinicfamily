@@ -1,0 +1,12 @@
+{
+  "name": "clinicfamily-render",
+  "private": true,
+  "description": "คำสั่งสำหรับ Render: build หน้าเว็บ + ติดตั้ง server แล้วเปิด server ตัวเดียว",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "build": "npm ci --prefix client --include=dev && npm run build --prefix client && npm ci --prefix server --omit=dev",
+    "start": "npm start --prefix server"
+  }
+}
