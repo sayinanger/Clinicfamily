@@ -54,8 +54,10 @@ export default function LiffLayout() {
 
   // พื้นเขียวจาง #EFF4EB (primary-soft) เต็มจอ — ทุกหน้าฝั่งผู้ป่วย (ผู้ใช้สั่ง 2026-10-02)
   // เนื้อหากว้างไม่เกินขนาดมือถือ (max-w-md) และอยู่กึ่งกลาง
+  // เว้นระยะล่างเท่าแถบขีดปัดกลับหน้าโฮมของ iPhone (env(safe-area-inset-bottom) — มือถือที่ไม่มีแถบ = 0)
+  // คู่กับ viewport-fit=cover ใน index.html: ป๊อปอัปคลุมเต็มจอ แต่ปุ่มล่างสุดไม่จมใต้แถบ
   return (
-    <div className="min-h-screen bg-primary-soft">
+    <div className="min-h-screen bg-primary-soft pb-[env(safe-area-inset-bottom)]">
       <div className="mx-auto max-w-md">
         <Outlet context={{ lineUser, me, setMe }} />
       </div>
