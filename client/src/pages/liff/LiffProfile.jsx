@@ -134,8 +134,14 @@ export default function LiffProfile() {
     <div className="px-6 pt-12 pb-10">
       <form onSubmit={handleSubmit} noValidate className="mx-auto max-w-[321px]">
         <h1 className="text-center text-[29px] font-semibold text-black">ประวัติส่วนตัว</h1>
+        {/* 21 ต.ค.: เตือนให้กรอกข้อมูลของคนที่จะมาพบแพทย์ — 1 บัญชี LINE = ผู้ป่วย 1 คน */}
+        <p className="mt-3 text-center text-[16px] leading-[1.4] text-liff-red">
+          กรอกข้อมูลของผู้ที่จะมาพบแพทย์
+          <br />
+          บัญชี LINE หนึ่งบัญชีใช้ได้สำหรับผู้ป่วย 1 คน
+        </p>
 
-        <div className="mt-14 space-y-6">
+        <div className="mt-10 space-y-6">
           {/* ชื่อ */}
           <Field label="ชื่อ" htmlFor="firstName" error={fieldErrors.firstName}>
             <input
