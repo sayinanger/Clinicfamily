@@ -115,10 +115,12 @@ export default function LiffAppointment() {
       setCancelledAppointment(data.appointment)
       setPopup('cancelled')
     } catch (err) {
-      // เช่น เปิดหน้าค้างไว้จนเลยเส้นตาย (TOO_LATE_TO_CHANGE) → ข้อความแดง + โหลดนัดใหม่ (จะเห็นกล่องแดงเลยเวลา)
+      // เช่น เปิดหน้าค้างไว้จนเลยเส้นตาย (TOO_LATE_TO_CHANGE) → โหลดนัดใหม่ (จะเห็นกล่องแดงเลยเวลา)
       setPopup(null)
       setChoice('')
-      setErrorMessage(err.message)
+      // เลยเส้นตาย → ไม่แสดงข้อความจาก server ซ้ำ เพราะกล่องแดงเลยเวลา (มีเบอร์คลินิก) ขึ้นอยู่แล้ว
+      // กันกล่องแดงซ้ำ 2 กล่อง (เจอตอนทดสอบ TC-018, 2 พ.ย.) · error อื่นยังแสดงข้อความตามเดิม
+      if (err.code !== 'TOO_LATE_TO_CHANGE') setErrorMessage(err.message)
       loadAppointment()
     } finally {
       setBusy(false)
