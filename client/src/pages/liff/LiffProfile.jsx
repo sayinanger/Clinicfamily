@@ -50,9 +50,18 @@ function formToBirthDate(form) {
   return `${yearCE}-${month}-${day}`
 }
 
+
 // หน้าประวัติส่วนตัว (Figma 274:215) — ใช้ทั้งกรอกครั้งแรกและแก้ไข
 // ถ้าเปิดมาพร้อม ?next=... (เช่น จากเมนูจองคิว) บันทึกเสร็จจะไปหน้านั้นต่อ
 // ถ้าไม่มี (เปิดจากเมนูประวัติส่วนตัว) → ป๊อปอัป "บันทึกประวัติแล้ว" + ปุ่ม [ปิด] กลับแชท LINE (F9ก, 15 ต.ค.)
+// ทำเบอร์ให้เหลือตัวเลขล้วน สูงสุด 10 หลัก
+// รองรับการกรอกอัตโนมัติของโทรศัพท์ที่ใส่ขีด/ช่องว่างมาด้วย เช่น "092-852-6748" หรือ "+66 92 852 6748"
+// (เดิมใช้ maxLength={10} → ตัดก่อนลบขีด เบอร์เหลือ 8 หลัก — เพื่อนเจอตอนทดลองใช้ 2 พ.ย.)
+function normalizePhone(value) {
+  let digits = value.replace(/\D/g, '') // เหลือแต่ตัวเลข
+  if (digits.startsWith('66') && digits.length === 11) digits = '0' + digits.slice(2) // +66 → 0
+  return digits.slice(0, 10)
+}
 export default function LiffProfile() {
   const { me, setMe } = useOutletContext()
   const navigate = useNavigate()
@@ -232,9 +241,8 @@ export default function LiffProfile() {
               id="phone"
               type="tel"
               inputMode="numeric"
-              maxLength={10}
               value={form.phone}
-              onChange={(event) => updateField('phone', event.target.value.replace(/\D/g, ''))}
+              onChange={(event) => updateField('phone', normalizePhone(event.target.value))}
               autoComplete="tel"
               className={underlineInputClass}
             />
