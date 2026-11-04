@@ -10,7 +10,8 @@ import { pool } from '../db.js'
 let target = '(อ่านที่อยู่ไม่ได้)'
 try {
   const url = new URL(process.env.DATABASE_URL)
-  target = `${url.hostname} / ${url.pathname.slice(1)}`
+  // แสดงรหัสโปรเจกต์ (ส่วนหลัง postgres.) ด้วย — โปรเจกต์ที่อยู่ภูมิภาคเดียวกันใช้ชื่อเครื่องเดียวกัน ดูแค่ชื่อเครื่องแยกไม่ออก
+  target = `โปรเจกต์ ${url.username.replace(/^postgres\./, '') || '-'} (${url.hostname} / ${url.pathname.slice(1)})`
 } catch {
   // อ่านไม่ได้ก็แค่แสดงข้อความด้านบน ไม่ต้องหยุด
 }
@@ -43,7 +44,7 @@ try {
     SELECT table_name
     FROM information_schema.tables
     WHERE table_schema = 'public'
-      AND table_name IN ('users', 'staff', 'time_slots', 'appointments', 'notifications')
+      AND table_name IN ('users', 'staff', 'appointments', 'closed_slots', 'notifications')
     ORDER BY table_name
   `)
   console.log(`✅ สร้างตารางใหม่เรียบร้อย ${rows.length} ตาราง: ${rows.map((r) => r.table_name).join(', ')}`)

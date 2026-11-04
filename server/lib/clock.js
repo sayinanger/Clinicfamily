@@ -90,7 +90,15 @@ export function isValidDateString(text) {
 }
 
 // วันที่ + เวลา (เวลาไทย) → Date เช่น ('2026-10-17', '07:15') → 07:15 น. ไทย
-// (ข้อ #18 ใน er-review: slot_date + start_time ต้องรวมกันเป็นเวลาไทยเสมอ)
+// (ข้อ #18 ใน er-review: วันนัด + เวลานัด ต้องรวมกันเป็นเวลาไทยเสมอ)
 export function bangkokTime(dateString, time) {
   return new Date(`${dateString}T${time.slice(0, 5)}:00+07:00`)
+}
+
+// เวลาเริ่มช่วง → เวลาจบ (ช่วงละ 15 นาที) เช่น '07:45' หรือ '07:45:00' → '08:00'
+// (ไม่เก็บเวลาจบในฐานข้อมูล — คำนวณจากเวลาเริ่มเสมอ)
+export function slotEndTime(time) {
+  const [hour, minute] = time.slice(0, 5).split(':').map(Number)
+  const total = hour * 60 + minute + 15
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
 }

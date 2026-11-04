@@ -1,71 +1,38 @@
-// งานเกี่ยวกับช่วงเวลา (time_slots)
-// - ขั้น F: สร้างคิวล่วงหน้าอัตโนมัติ (ensureSlots)
+// งานเกี่ยวกับช่วงเวลา
 // - ขั้น I: หน้า "จัดการเวลา" ของ staff — S7 ดูเวลาของวัน, S8 ปิด, S9 เปิด
 // - ขั้น M: หน้าจองคิวของผู้ป่วย — U4 วันที่จองได้, U5 ตารางเวลา, U6 ถือคิว, U7 ปล่อยคิว
 //
+// โครงฐานข้อมูลแบบใหม่ (4 พ.ย. 2569 — claude/snapshot-update-nov4.md):
+// - ไม่มีตารางช่วงเวลา · 12 ช่วงต่อวันเปิด (ส–อา 07:00–09:45 ทีละ 15 นาที) คำนวณในโค้ด
+// - สถานะของช่วงดูจาก 2 ตาราง ด้วยวัน + เวลาที่ตรงกัน (ไม่มี FK ถึงกัน):
+//     appointments  held (ยังไม่หมดเวลา) = กำลังถูกจอง · booked / completed / no_show = มีผู้จองแล้ว
+//     closed_slots  มีแถว = ปิดรับการจอง
+//     ไม่เจอในทั้ง 2 ตาราง = เปิดรับการจอง
+// - ถือคิว = เพิ่มแถว held ใน appointments · ปล่อย / หมดเวลา = ลบแถว (cron ลบทุก 1 นาที)
+// - ปิด = เพิ่มแถว closed_slots · เปิด = ลบแถว
+// - slotId ที่ส่งให้หน้าเว็บ = ข้อความวัน-เวลา 'YYYY-MM-DDTHH:MM' (320ก) หน้าเว็บส่งกลับมาเหมือนเดิม
+// - ถือคิวกับปิดช่วงเวลาอยู่คนละตาราง → ล็อกตามวัน-เวลา (lockKey) ให้ทำทีละรายการ
+//
 // กฎที่ใช้ (project-snapshot หมวด 5 + ตัดสินขั้น I):
-// - ปิดได้เฉพาะคิวที่ว่าง · เปิดได้เฉพาะคิวที่ถูกปิด
-// - คิว held ที่หมดเวลาถือแล้ว (hold_expires_at ≤ ตอนนี้) = ว่าง (ER #15, I2ก)
-// - คิวที่ถึงเวลาเริ่มแล้ว (ตอนนี้ ≥ เวลาเริ่มคิว) ปิด/เปิดไม่ได้ (I3ก) → หน้าเว็บรู้จาก isPast (I4ก)
+// - ปิดได้เฉพาะช่วงที่ว่าง · เปิดได้เฉพาะช่วงที่ถูกปิด
+// - held ที่หมดเวลาถือแล้ว (hold_expires_at ≤ ตอนนี้) = ว่าง (ER #15, I2ก) แม้ cron ยังไม่ทันลบ
+// - ช่วงที่ถึงเวลาเริ่มแล้ว (ตอนนี้ ≥ เวลาเริ่ม) ปิด/เปิดไม่ได้ (I3ก) → หน้าเว็บรู้จาก isPast (I4ก)
 
-import { query, pool } from '../db.js'
-import { now, toThaiIso, bangkokDateOf, addDays, isOpenDay, bangkokTime, isValidDateString } from '../lib/clock.js'
+import { query } from '../db.js'
+import { now, toThaiIso, bangkokDateOf, addDays, isOpenDay, bangkokTime, isValidDateString, slotEndTime } from '../lib/clock.js'
 import { HOLD_MS, HOLD_MIN_MS, BOOKING_CUTOFF_MS, SHORT_NOTICE_MS, BOOKING_DAYS_AHEAD } from '../lib/rules.js'
-import { findActiveAppointment, toPatientAppointment, changeDeadlineOf } from './appointments.js'
+import {
+  findActiveAppointment,
+  toPatientAppointment,
+  changeDeadlineOf,
+  slotKeyOf,
+  lockKey,
+  inTransaction,
+  isUniqueViolation,
+} from './appointments.js'
 
-// เวลาเริ่มของ 12 คิวต่อวัน (07:00–09:45 ทุก 15 นาที)
+// เวลาเริ่มของ 12 ช่วงต่อวัน (07:00–09:45 ทุก 15 นาที)
 export const SLOT_START_TIMES = ['07:00', '07:15', '07:30', '07:45', '08:00', '08:15', '08:30', '08:45', '09:00', '09:15', '09:30', '09:45']
-
-// สร้างคิวล่วงหน้าถึง "วันนี้ + 14 วัน" (กฎ: จองล่วงหน้าได้ไม่เกิน 14 วัน)
-export const DAYS_AHEAD = 14
-
-// จำว่าสร้างของ "วันที่เท่าไร" ไปแล้ว — วันที่ยังไม่เปลี่ยน = ไม่ต้องถามฐานข้อมูลซ้ำ
-// (เก็บในหน่วยความจำ: รีสตาร์ท server แล้วจะเช็กใหม่ 1 ครั้ง ซึ่งไม่เป็นไรเพราะไม่สร้างซ้ำ)
-let lastCheckedDate = null
-
-// เวลาจบคิว = เวลาเริ่ม + 15 นาที ('07:45' → '08:00')
-function endTimeOf(time) {
-  const [hour, minute] = time.split(':').map(Number)
-  const total = hour * 60 + minute + 15
-  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
-}
-
-// ให้มีคิวครบทุกวันเสาร์–อาทิตย์ ตั้งแต่วันนี้ถึงวันนี้ + 14 วัน
-// เรียกตอนเปิด server และก่อนอ่านคิวทุกครั้ง (S7, U4, U5) — ทำงานจริงเฉพาะเมื่อวันที่เปลี่ยน
-// คิวที่มีอยู่แล้ว (รวมคิวที่ staff ปิดไว้) ไม่ถูกแตะ: UNIQUE (slot_date, start_time) + ON CONFLICT DO NOTHING
-// คืนค่า = จำนวนคิวที่สร้างใหม่
-export async function ensureSlots() {
-  const current = now()
-  const today = bangkokDateOf(current)
-  if (today === lastCheckedDate) return 0
-
-  // เตรียมแถวทั้งหมดก่อน แล้วส่งคำสั่งเดียว ($1, $2 … = ช่องใส่ค่า)
-  const values = []
-  const params = [current] // $1 = created_at (เวลาจาก clock.js — รองรับ DEMO_NOW)
-  for (let date = today; date <= addDays(today, DAYS_AHEAD); date = addDays(date, 1)) {
-    if (!isOpenDay(date)) continue
-    for (const time of SLOT_START_TIMES) {
-      const n = params.length
-      params.push(date, time, endTimeOf(time))
-      values.push(`($${n + 1}::date, $${n + 2}::time, $${n + 3}::time, 'available', $1)`)
-    }
-  }
-
-  const result = await query(
-    `INSERT INTO time_slots (slot_date, start_time, end_time, slot_status, created_at)
-     VALUES ${values.join(', ')}
-     ON CONFLICT (slot_date, start_time) DO NOTHING`,
-    params
-  )
-
-  lastCheckedDate = today // จำไว้หลังสำเร็จเท่านั้น (ถ้าพัง ครั้งหน้าจะลองใหม่)
-  return result.rowCount
-}
-
-// ---------- ขั้น I: S7–S9 ----------
-
-// เลข id ที่ใหญ่สุดของคอลัมน์ INTEGER (เกินนี้ถ้าส่งให้ฐานข้อมูลจะพังเป็น 500)
-const MAX_INTEGER = 2147483647
 
 // error ที่ตั้งใจตอบกลับ (route จะแปลงเป็น HTTP status + { code, message })
 // extra = ข้อมูลแนบเพิ่มในคำตอบ (เช่น U6 HAS_ACTIVE_APPOINTMENT แนบ { appointment })
@@ -78,125 +45,145 @@ export class SlotError extends Error {
   }
 }
 
-// คำสั่งอ่านคิว — สถานะที่ส่งออกไป: held ที่หมดเวลาถือแล้ว ถือเป็น available (I2ก)
-// $2 = เวลาจาก clock.js (ไม่ใช้ now() ของ SQL เพราะจะไม่ตาม DEMO_NOW)
-const SELECT_ADMIN_SLOT = `
-  SELECT slot_id, slot_date, start_time, end_time,
-         CASE WHEN slot_status = 'held' AND hold_expires_at <= $2 THEN 'available'
-              ELSE slot_status END AS status
-  FROM time_slots`
+// ---------- ตัวช่วยร่วม ----------
 
-// แถวจากฐานข้อมูล → รูปแบบที่ส่งให้หน้าเว็บ (S7 ใน docs/api-contract.md)
-// currentTime = เวลาจาก clock.js (ส่งเข้ามา เพื่อให้ทุกแถวในคำตอบเดียวกันใช้เวลาเดียวกัน)
-function toAdminSlot(row, currentTime) {
+// วันนี้ (ไทย) ถึงวันสุดท้ายที่จองได้ (วันนี้ + 14 วัน)
+function lastBookableDate(currentTime) {
+  return addDays(bangkokDateOf(currentTime), BOOKING_DAYS_AHEAD)
+}
+
+// slotId ('YYYY-MM-DDTHH:MM') → { date, time } · รูปแบบผิด / ไม่ใช่วันเปิด / ไม่ใช่ 1 ใน 12 ช่วง → null
+function parseSlotKey(value) {
+  const match = typeof value === 'string' ? value.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})$/) : null
+  if (!match) return null
+  const [, date, time] = match
+  if (!isValidDateString(date) || !isOpenDay(date) || !SLOT_START_TIMES.includes(time)) return null
+  return { date, time }
+}
+
+// สิ่งที่ใช้ช่วงเวลาอยู่ ระหว่างวัน fromDate–toDate → Map('YYYY-MM-DDTHH:MM' → { status, userId?, holdExpiresAt? })
+//   status: 'booked' (booked / completed / no_show) · 'held' (ยังไม่หมดเวลา) · 'closed'
+//   ช่วงที่ไม่อยู่ใน Map = ว่าง (ไม่นับนัดที่ยกเลิก และ held ที่หมดเวลาแล้ว)
+// db = ตัวส่งคำสั่ง (ปกติ query · ใน transaction ส่งตัวของ transaction มาแทน)
+async function loadSlotUsage(fromDate, toDate, currentTime, db = query) {
+  const taken = await db(
+    `SELECT user_id, appointment_date, slot_time, status, hold_expires_at
+     FROM appointments
+     WHERE appointment_date BETWEEN $1 AND $2
+       AND (status IN ('booked', 'completed', 'no_show') OR (status = 'held' AND hold_expires_at > $3))`,
+    [fromDate, toDate, currentTime]
+  )
+  const closed = await db(
+    `SELECT slot_date, slot_time FROM closed_slots WHERE slot_date BETWEEN $1 AND $2`,
+    [fromDate, toDate]
+  )
+
+  const usage = new Map()
+  for (const row of closed.rows) usage.set(slotKeyOf(row.slot_date, row.slot_time), { status: 'closed' })
+  for (const row of taken.rows) {
+    const key = slotKeyOf(row.appointment_date, row.slot_time)
+    if (row.status === 'held') {
+      usage.set(key, { status: 'held', userId: row.user_id, holdExpiresAt: row.hold_expires_at })
+    } else {
+      usage.set(key, { status: 'booked' }) // มีนัดจริง ขึ้นก่อน held / closed เสมอ
+    }
+  }
+  return usage
+}
+
+// ---------- ขั้น I: S7–S9 ----------
+
+// ช่วงเวลา → รูปแบบที่ส่งให้หน้าเว็บ (S7 ใน docs/api-contract.md)
+// currentTime = เวลาจาก clock.js (ส่งเข้ามา เพื่อให้ทุกช่วงในคำตอบเดียวกันใช้เวลาเดียวกัน)
+function toAdminSlot(date, time, usage, currentTime) {
   return {
-    slotId: row.slot_id,
-    startTime: row.start_time.slice(0, 5), // '07:00:00' → '07:00'
-    endTime: row.end_time.slice(0, 5),
-    status: row.status,
-    // ถึงเวลาเริ่มคิวแล้ว → หน้าเว็บแสดงปุ่ม [เลยเวลา] สีเทา (I3ก, I4ก, I7 แบบ 1)
-    isPast: currentTime >= bangkokTime(row.slot_date, row.start_time),
+    slotId: slotKeyOf(date, time),
+    startTime: time,
+    endTime: slotEndTime(time),
+    status: usage.get(slotKeyOf(date, time))?.status ?? 'available',
+    // ถึงเวลาเริ่มแล้ว → หน้าเว็บแสดงปุ่ม [เลยเวลา] สีเทา (I3ก, I4ก, I7 แบบ 1)
+    isPast: currentTime >= bangkokTime(date, time),
   }
 }
 
 // S7 — เวลาทั้งหมดของวันที่เลือก เรียงตามเวลา
-// วันธรรมดา / ไกลเกิน 14 วัน ไม่มีแถวในตาราง → [] เอง
+// วันธรรมดา / ไกลเกิน 14 วัน → [] (เหมือนเดิมที่ไม่มีแถวในตาราง)
 export async function listAdminSlots(date) {
-  await ensureSlots() // สร้างคิวที่ยังขาด (ทำงานจริงเฉพาะเมื่อวันที่เปลี่ยน)
   const currentTime = now()
-  const result = await query(`${SELECT_ADMIN_SLOT} WHERE slot_date = $1 ORDER BY start_time`, [date, currentTime])
-  return result.rows.map((row) => toAdminSlot(row, currentTime))
+  if (!isOpenDay(date) || date > lastBookableDate(currentTime)) return []
+  const usage = await loadSlotUsage(date, date, currentTime)
+  return SLOT_START_TIMES.map((time) => toAdminSlot(date, time, usage, currentTime))
 }
 
-// แปลง id จาก URL เป็นตัวเลข — ไม่ใช่ตัวเลข / ใหญ่เกิน → 404 (แบบเดียวกับ H5ก)
-function parseSlotId(idText) {
-  const id = /^\d+$/.test(idText) ? Number(idText) : NaN
-  if (!Number.isInteger(id) || id < 1 || id > MAX_INTEGER) {
+// slotId จาก URL → { date, time } · ใช้ไม่ได้ / ไกลเกิน 14 วัน → 404 (แบบเดียวกับ H5ก)
+function parseAdminSlotKey(idText, currentTime) {
+  const slot = parseSlotKey(idText)
+  if (!slot || slot.date > lastBookableDate(currentTime)) {
     throw new SlotError(404, 'NOT_FOUND', 'ไม่พบช่วงเวลานี้')
   }
-  return id
+  return slot
 }
 
-// อ่านคิวตัวเดียว (ไม่เจอ → null)
-async function findAdminSlot(id, currentTime) {
-  const result = await query(`${SELECT_ADMIN_SLOT} WHERE slot_id = $1`, [id, currentTime])
-  return result.rows[0] ?? null
-}
-
-// เงื่อนไข "คิวยังไม่ถึงเวลาเริ่ม" ใน SQL — (slot_date + start_time) AT TIME ZONE = เวลาเริ่มคิวแบบเวลาไทย
-const NOT_STARTED_YET = `(slot_date + start_time) AT TIME ZONE 'Asia/Bangkok' > $2::timestamptz`
-
-// S8 — กด [ปิด]: available (หรือ held ที่หมดเวลาแล้ว) → closed
-// UPDATE แบบมีเงื่อนไข: ผู้ป่วยกดเลือกคิวนี้พร้อมกัน → สำเร็จได้ฝ่ายเดียว
-// ล้าง held_by_user_id / hold_expires_at ด้วย (กรณี held ที่หมดเวลาค้างอยู่)
-export async function closeSlot(idText) {
-  const id = parseSlotId(idText)
+// S8 — กด [ปิด]: ช่วงที่ว่าง → เพิ่มแถวใน closed_slots
+// staffId = เจ้าหน้าที่ที่ login อยู่ (closed_slots.staff_id)
+// ลำดับ error (I5ก): ไม่พบ → ไม่ว่าง → เลยเวลา
+export async function closeSlot(idText, staffId) {
   const currentTime = now()
+  const slot = parseAdminSlotKey(idText, currentTime)
 
-  const updated = await query(
-    `UPDATE time_slots
-     SET slot_status = 'closed', held_by_user_id = NULL, hold_expires_at = NULL
-     WHERE slot_id = $1
-       AND (slot_status = 'available' OR (slot_status = 'held' AND hold_expires_at <= $2))
-       AND ${NOT_STARTED_YET}`,
-    [id, currentTime]
-  )
-
-  const row = await findAdminSlot(id, currentTime)
-  if (updated.rowCount === 1) return toAdminSlot(row, currentTime)
-
-  // แก้ไม่สำเร็จ → หาเหตุผล (ลำดับตาม I5ก: ไม่มีคิว → สถานะไม่ใช่ → เลยเวลา)
-  if (!row) throw new SlotError(404, 'NOT_FOUND', 'ไม่พบช่วงเวลานี้')
-  if (row.status !== 'available') throw new SlotError(409, 'SLOT_NOT_AVAILABLE', 'ปิดได้เฉพาะเวลาที่ยังว่าง')
-  throw new SlotError(409, 'SLOT_PAST', 'เวลานี้ผ่านไปแล้ว ปิดหรือเปิดไม่ได้')
+  const usage = await inTransaction(async (db) => {
+    // ล็อกวัน-เวลานี้: ผู้ป่วยกดถือช่วงนี้พร้อมกัน → ทำทีละรายการ สำเร็จได้ฝ่ายเดียว
+    await lockKey(db, `slot ${slotKeyOf(slot.date, slot.time)}`)
+    const before = await loadSlotUsage(slot.date, slot.date, currentTime, db)
+    if (before.has(slotKeyOf(slot.date, slot.time))) {
+      throw new SlotError(409, 'SLOT_NOT_AVAILABLE', 'ปิดได้เฉพาะเวลาที่ยังว่าง')
+    }
+    if (currentTime >= bangkokTime(slot.date, slot.time)) {
+      throw new SlotError(409, 'SLOT_PAST', 'เวลานี้ผ่านไปแล้ว ปิดหรือเปิดไม่ได้')
+    }
+    // เก็บกวาด held ที่หมดเวลาค้างอยู่ของช่วงนี้ (ไม่ต้องรอ cron)
+    await db(
+      `DELETE FROM appointments
+       WHERE status = 'held' AND hold_expires_at <= $3 AND appointment_date = $1 AND slot_time = $2`,
+      [slot.date, slot.time, currentTime]
+    )
+    await db(`INSERT INTO closed_slots (slot_date, slot_time, staff_id) VALUES ($1, $2, $3)`, [slot.date, slot.time, staffId])
+    return loadSlotUsage(slot.date, slot.date, currentTime, db)
+  })
+  return toAdminSlot(slot.date, slot.time, usage, currentTime)
 }
 
-// S9 — กด [เปิด]: closed → available
+// S9 — กด [เปิด]: ลบแถวใน closed_slots
+// ลำดับ error: ไม่พบ → ไม่ได้ปิดอยู่ → เลยเวลา
 export async function openSlot(idText) {
-  const id = parseSlotId(idText)
   const currentTime = now()
+  const slot = parseAdminSlotKey(idText, currentTime)
 
-  const updated = await query(
-    `UPDATE time_slots
-     SET slot_status = 'available'
-     WHERE slot_id = $1
-       AND slot_status = 'closed'
-       AND ${NOT_STARTED_YET}`,
-    [id, currentTime]
-  )
-
-  const row = await findAdminSlot(id, currentTime)
-  if (updated.rowCount === 1) return toAdminSlot(row, currentTime)
-
-  if (!row) throw new SlotError(404, 'NOT_FOUND', 'ไม่พบช่วงเวลานี้')
-  if (row.status !== 'closed') throw new SlotError(409, 'SLOT_NOT_CLOSED', 'เวลานี้ไม่ได้ถูกปิดอยู่')
-  throw new SlotError(409, 'SLOT_PAST', 'เวลานี้ผ่านไปแล้ว ปิดหรือเปิดไม่ได้')
+  const usage = await inTransaction(async (db) => {
+    await lockKey(db, `slot ${slotKeyOf(slot.date, slot.time)}`)
+    const before = await loadSlotUsage(slot.date, slot.date, currentTime, db)
+    if (before.get(slotKeyOf(slot.date, slot.time))?.status !== 'closed') {
+      throw new SlotError(409, 'SLOT_NOT_CLOSED', 'เวลานี้ไม่ได้ถูกปิดอยู่')
+    }
+    if (currentTime >= bangkokTime(slot.date, slot.time)) {
+      throw new SlotError(409, 'SLOT_PAST', 'เวลานี้ผ่านไปแล้ว ปิดหรือเปิดไม่ได้')
+    }
+    await db(`DELETE FROM closed_slots WHERE slot_date = $1 AND slot_time = $2`, [slot.date, slot.time])
+    return loadSlotUsage(slot.date, slot.date, currentTime, db)
+  })
+  return toAdminSlot(slot.date, slot.time, usage, currentTime)
 }
 
 // ---------- ขั้น M: U4–U7 หน้าจองคิวของผู้ป่วย ----------
 //
 // กฎที่ใช้ (project-snapshot หมวด 5 + claude/time-rules-v2.md + claude/u-decisions.md):
-// - วันที่จองได้ = เสาร์–อาทิตย์ ตั้งแต่วันนี้ถึงวันนี้ + 14 วัน (วันนี้แสดงเสมอแม้ไม่มีคิวว่าง — M2ก)
-// - กดเลือกคิวได้เมื่อเหลือเวลาก่อนนัด ≥ 11 นาที (ยืนยันก่อนนัด 10 นาที + เวลายืนยันขั้นต่ำ 1 นาที)
-// - คิว held ที่หมดเวลาถือแล้ว = ว่าง ทุก query (ER #15) — ไม่ต้องรอ cron (cron ใน lib/reminders.js ล้างเป็น available ทุก 1 นาที — M6ก, ชุด P)
-// - ถือได้ครั้งละ 1 คิว: ถือคิวใหม่ → ปล่อยคิวเดิมให้อัตโนมัติ
-// - กดคิวที่ตัวเองถืออยู่ซ้ำ → ได้ hold เดิม นับเวลาต่อ ไม่ต่ออายุ (M4ข)
-// - U6 ตรวจเวลา (TOO_LATE) ก่อนคิวไม่ว่าง (SLOT_TAKEN) (M5ก)
-
-// คำสั่งอ่านคิวสำหรับผู้ป่วย (สถานะจริง + ใครถือ + หมดเวลาถือเมื่อไร → คิดสถานะที่ผู้ป่วยเห็นใน JS)
-const SELECT_PATIENT_SLOT = `
-  SELECT slot_id, slot_date, start_time, end_time, slot_status, held_by_user_id, hold_expires_at
-  FROM time_slots`
-
-// คิวนี้ "ว่าง" ไหม: available หรือ held ที่หมดเวลาถือแล้ว
-function isFree(row, currentTime) {
-  return row.slot_status === 'available' || (row.slot_status === 'held' && row.hold_expires_at <= currentTime)
-}
-
-// ผู้ป่วยคนนี้กำลังถือคิวนี้อยู่ (ยังไม่หมดเวลา) ไหม
-function isHeldBy(row, userId, currentTime) {
-  return row.slot_status === 'held' && row.held_by_user_id === userId && row.hold_expires_at > currentTime
-}
+// - วันที่จองได้ = เสาร์–อาทิตย์ ตั้งแต่วันนี้ถึงวันนี้ + 14 วัน (วันนี้แสดงเสมอแม้ไม่มีช่วงว่าง — M2ก)
+// - กดเลือกได้เมื่อเหลือเวลาก่อนนัด ≥ 11 นาที (ยืนยันก่อนนัด 10 นาที + เวลายืนยันขั้นต่ำ 1 นาที)
+// - held ที่หมดเวลาถือแล้ว = ว่าง ทุก query (ER #15) — ไม่ต้องรอ cron (cron ใน lib/reminders.js ลบทุก 1 นาที — M6ก)
+// - ถือได้ครั้งละ 1 ช่วง: ถือช่วงใหม่ → ลบแถว held เดิมให้อัตโนมัติ
+// - กดช่วงที่ตัวเองถืออยู่ซ้ำ → ได้ hold เดิม นับเวลาต่อ ไม่ต่ออายุ (M4ข)
+// - U6 ตรวจเวลา (TOO_LATE) ก่อนช่วงไม่ว่าง (SLOT_TAKEN) (M5ก)
+// - มีนัด booked อยู่แล้ว ถือได้เฉพาะตอนเลื่อนนัด (purpose: reschedule) — กฎนี้อยู่ในโค้ด (329ข)
 
 // เหลือเวลาไม่พอให้กดเลือก (เหลือ < 10 นาที + 1 นาที = 11 นาที) → "หมดเวลาจอง"
 function isTooLate(slotStart, currentTime) {
@@ -208,12 +195,18 @@ function isShortNotice(slotStart, currentTime) {
   return slotStart.getTime() - currentTime.getTime() < SHORT_NOTICE_MS
 }
 
+// ผู้ป่วยคนนี้กำลังถือช่วงนี้อยู่ (ยังไม่หมดเวลา) ไหม → แถว usage หรือ null
+function myHoldOf(usageEntry, userId) {
+  return usageEntry?.status === 'held' && usageEntry.userId === userId ? usageEntry : null
+}
+
 // สถานะที่ผู้ป่วยเห็น (U5) — ลำดับเดียวกับ mock: ของฉัน → หมดเวลาจอง → ว่าง → ไม่ว่าง
 // unavailable = มีคนจอง / คนอื่นกำลังถือ / ปิด (ผู้ป่วยไม่ต้องรู้ว่าแบบไหน)
-function patientStatusOf(row, userId, currentTime) {
-  if (isHeldBy(row, userId, currentTime)) return 'held_by_me'
-  if (isTooLate(bangkokTime(row.slot_date, row.start_time), currentTime)) return 'too_late'
-  if (isFree(row, currentTime)) return 'available'
+function patientStatusOf(date, time, usage, userId, currentTime) {
+  const entry = usage.get(slotKeyOf(date, time))
+  if (myHoldOf(entry, userId)) return 'held_by_me'
+  if (isTooLate(bangkokTime(date, time), currentTime)) return 'too_late'
+  if (!entry) return 'available'
   return 'unavailable'
 }
 
@@ -226,63 +219,50 @@ function bookingDatesFrom(today) {
   return dates
 }
 
-// U4 — วันที่เลือกได้ + จำนวนคิวที่ยังกดได้ (availableCount นับเฉพาะ "ว่าง" ไม่นับคิวที่ตัวเองถืออยู่ — เหมือน mock)
+// U4 — วันที่เลือกได้ + จำนวนช่วงที่ยังกดได้ (availableCount นับเฉพาะ "ว่าง" ไม่นับช่วงที่ตัวเองถืออยู่ — เหมือน mock)
 export async function listBookingDays(userId) {
-  await ensureSlots()
   const currentTime = now()
   const dates = bookingDatesFrom(bangkokDateOf(currentTime))
-  const result = await query(
-    `${SELECT_PATIENT_SLOT} WHERE slot_date BETWEEN $1 AND $2`,
-    [dates[0], dates[dates.length - 1]]
-  )
-  const countByDate = Object.fromEntries(dates.map((date) => [date, 0]))
-  for (const row of result.rows) {
-    if (row.slot_date in countByDate && patientStatusOf(row, userId, currentTime) === 'available') {
-      countByDate[row.slot_date] += 1
-    }
-  }
-  return { days: dates.map((date) => ({ date, availableCount: countByDate[date] })) }
-}
-
-// U5 — ตารางเวลาของวัน · date ผิดทุกแบบ (รูปแบบผิด / ไม่ใช่วันเปิด / ย้อนหลัง / เกิน 14 วัน) → 400 INVALID_DATE (M3ก)
-export async function listPatientSlots(userId, dateText) {
-  await ensureSlots()
-  const currentTime = now()
-  if (!isValidDateString(dateText) || !bookingDatesFrom(bangkokDateOf(currentTime)).includes(dateText)) {
-    throw new SlotError(400, 'INVALID_DATE', 'วันที่นี้ไม่เปิดให้จอง')
-  }
-  const result = await query(`${SELECT_PATIENT_SLOT} WHERE slot_date = $1 ORDER BY start_time`, [dateText])
+  const usage = await loadSlotUsage(dates[0], dates[dates.length - 1], currentTime)
   return {
-    date: dateText,
-    slots: result.rows.map((row) => ({
-      slotId: row.slot_id,
-      startTime: row.start_time.slice(0, 5),
-      endTime: row.end_time.slice(0, 5),
-      status: patientStatusOf(row, userId, currentTime),
-      shortNotice: isShortNotice(bangkokTime(row.slot_date, row.start_time), currentTime),
+    days: dates.map((date) => ({
+      date,
+      availableCount: SLOT_START_TIMES.filter(
+        (time) => patientStatusOf(date, time, usage, userId, currentTime) === 'available'
+      ).length,
     })),
   }
 }
 
-// แปลง slotId จาก body → ตัวเลข (รับตัวเลข หรือข้อความที่เป็นตัวเลข) · ผิด → 404 แบบเดียวกับ mock
-function parseBodySlotId(value) {
-  const id = typeof value === 'number' ? value : /^\d+$/.test(String(value ?? '')) ? Number(value) : NaN
-  if (!Number.isInteger(id) || id < 1 || id > MAX_INTEGER) {
-    throw new SlotError(404, 'NOT_FOUND', 'ไม่พบช่วงเวลานี้')
+// U5 — ตารางเวลาของวัน · date ผิดทุกแบบ (รูปแบบผิด / ไม่ใช่วันเปิด / ย้อนหลัง / เกิน 14 วัน) → 400 INVALID_DATE (M3ก)
+export async function listPatientSlots(userId, dateText) {
+  const currentTime = now()
+  if (!isValidDateString(dateText) || !bookingDatesFrom(bangkokDateOf(currentTime)).includes(dateText)) {
+    throw new SlotError(400, 'INVALID_DATE', 'วันที่นี้ไม่เปิดให้จอง')
   }
-  return id
+  const usage = await loadSlotUsage(dateText, dateText, currentTime)
+  return {
+    date: dateText,
+    slots: SLOT_START_TIMES.map((time) => ({
+      slotId: slotKeyOf(dateText, time),
+      startTime: time,
+      endTime: slotEndTime(time),
+      status: patientStatusOf(dateText, time, usage, userId, currentTime),
+      shortNotice: isShortNotice(bangkokTime(dateText, time), currentTime),
+    })),
+  }
 }
 
 // รูปแบบ hold ที่ส่งให้หน้าเว็บ (U6 ใน docs/api-contract.md)
-function toHold(row, holdExpiresAt, currentTime) {
-  const slotStart = bangkokTime(row.slot_date, row.start_time)
+function toHold(slot, holdExpiresAt, currentTime) {
+  const slotStart = bangkokTime(slot.date, slot.time)
   return {
     hold: {
-      slotId: row.slot_id,
-      date: row.slot_date,
-      startTime: row.start_time.slice(0, 5),
+      slotId: slotKeyOf(slot.date, slot.time),
+      date: slot.date,
+      startTime: slot.time,
       holdExpiresAt: toThaiIso(holdExpiresAt),
-      changeDeadline: toThaiIso(changeDeadlineOf(row.slot_date, row.start_time)), // นัดใหม่ − 15 นาที
+      changeDeadline: toThaiIso(changeDeadlineOf(slot.date, slot.time)), // นัดใหม่ − 15 นาที
       shortNotice: isShortNotice(slotStart, currentTime),
     },
   }
@@ -311,28 +291,27 @@ export async function holdSlot(user, body) {
     throw new SlotError(409, 'NO_APPOINTMENT_TO_RESCHEDULE', 'ไม่มีนัดที่จะเลื่อน')
   }
 
-  // 2) หาคิว
-  const slotId = parseBodySlotId(body?.slotId)
-  const found = await query(`${SELECT_PATIENT_SLOT} WHERE slot_id = $1`, [slotId])
-  const row = found.rows[0]
-  if (!row) throw new SlotError(404, 'NOT_FOUND', 'ไม่พบช่วงเวลานี้')
-  const slotStart = bangkokTime(row.slot_date, row.start_time)
+  // 2) หาช่วงเวลา
+  const slot = parseSlotKey(body?.slotId)
+  if (!slot) throw new SlotError(404, 'NOT_FOUND', 'ไม่พบช่วงเวลานี้')
+  const key = slotKeyOf(slot.date, slot.time)
+  const slotStart = bangkokTime(slot.date, slot.time)
 
   // 3) ไกลเกิน 14 วัน
-  if (row.slot_date > addDays(bangkokDateOf(currentTime), BOOKING_DAYS_AHEAD)) {
+  if (slot.date > lastBookableDate(currentTime)) {
     throw new SlotError(400, 'TOO_FAR_TO_BOOK', 'จองล่วงหน้าได้ไม่เกิน 14 วัน')
   }
 
-  // 4) กดคิวที่ตัวเองถืออยู่ซ้ำ → คืน hold เดิม นับต่อ (M4ข)
-  if (isHeldBy(row, userId, currentTime)) {
-    return toHold(row, row.hold_expires_at, currentTime)
-  }
+  // 4) กดช่วงที่ตัวเองถืออยู่ซ้ำ → คืน hold เดิม นับต่อ (M4ข)
+  const usage = await loadSlotUsage(slot.date, slot.date, currentTime)
+  const myHold = myHoldOf(usage.get(key), userId)
+  if (myHold) return toHold(slot, myHold.holdExpiresAt, currentTime)
 
-  // 5) เวลา ก่อน คิวว่าง (M5ก)
+  // 5) เวลา ก่อน ช่วงว่าง (M5ก)
   if (isTooLate(slotStart, currentTime)) {
     throw new SlotError(400, 'TOO_LATE_TO_BOOK', 'ต้องจองก่อนเวลานัดอย่างน้อย 10 นาที')
   }
-  if (!isFree(row, currentTime)) {
+  if (usage.has(key)) {
     throw new SlotError(409, 'SLOT_TAKEN', 'คิวนี้มีผู้จองแล้ว กรุณาเลือกเวลาอื่น')
   }
 
@@ -340,7 +319,7 @@ export async function holdSlot(user, body) {
   let expiresMs = Math.min(currentTime.getTime() + HOLD_MS, slotStart.getTime() - BOOKING_CUTOFF_MS)
   let limitedByOldAppointment = false
   if (purpose === 'reschedule') {
-    const oldDeadline = changeDeadlineOf(active.slot_date, active.start_time)
+    const oldDeadline = changeDeadlineOf(active.appointment_date, active.slot_time)
     if (oldDeadline.getTime() < expiresMs) {
       expiresMs = oldDeadline.getTime()
       limitedByOldAppointment = true
@@ -356,49 +335,40 @@ export async function holdSlot(user, body) {
   }
   const holdExpiresAt = new Date(expiresMs)
 
-  // 7) ปล่อยคิวเดิม + ถือคิวใหม่ ใน transaction เดียว (ถือคิวใหม่ไม่สำเร็จ → คิวเดิมยังถืออยู่เหมือนเดิม)
-  const client = await pool.connect()
+  // 7) ลบ held เดิม + เพิ่ม held ใหม่ ใน transaction เดียว (ถือช่วงใหม่ไม่สำเร็จ → ROLLBACK held เดิมยังอยู่)
+  //    ล็อกผู้ป่วย (กด 2 ช่วงพร้อมกัน) แล้วล็อกวัน-เวลา (คนอื่นถือ / staff ปิดพร้อมกัน) → ทำทีละรายการ
   try {
-    await client.query('BEGIN')
-    await client.query(
-      `UPDATE time_slots
-       SET slot_status = 'available', held_by_user_id = NULL, hold_expires_at = NULL
-       WHERE held_by_user_id = $1 AND slot_status = 'held' AND slot_id <> $2
-       RETURNING slot_id`,
-      [userId, slotId]
-    )
-    // UPDATE แบบมีเงื่อนไข: คนอื่นกดคิวเดียวกันพร้อมกัน → สำเร็จได้คนเดียว
-    const taken = await client.query(
-      `UPDATE time_slots
-       SET slot_status = 'held', held_by_user_id = $2, hold_expires_at = $3
-       WHERE slot_id = $1
-         AND (slot_status = 'available' OR (slot_status = 'held' AND hold_expires_at <= $4))
-       RETURNING slot_id`,
-      [slotId, userId, holdExpiresAt, currentTime]
-    )
-    if (taken.rowCount !== 1) {
-      await client.query('ROLLBACK')
-      throw new SlotError(409, 'SLOT_TAKEN', 'คิวนี้มีผู้จองแล้ว กรุณาเลือกเวลาอื่น')
-    }
-    await client.query('COMMIT')
+    await inTransaction(async (db) => {
+      await lockKey(db, `user ${userId}`)
+      await lockKey(db, `slot ${key}`)
+      // ลบ held ทุกแถวของฉัน + held ที่หมดเวลาแล้วของช่วงนี้ (ของใครก็ได้ — ไม่ต้องรอ cron)
+      await db(
+        `DELETE FROM appointments
+         WHERE status = 'held'
+           AND (user_id = $1
+                OR (appointment_date = $2 AND slot_time = $3 AND hold_expires_at <= $4))`,
+        [userId, slot.date, slot.time, currentTime]
+      )
+      // ตรวจซ้ำหลังได้ล็อก (ช่วงนี้อาจถูกจอง/ถือ/ปิดไปแล้วระหว่างนั้น)
+      const latest = await loadSlotUsage(slot.date, slot.date, currentTime, db)
+      if (latest.has(key)) throw new SlotError(409, 'SLOT_TAKEN', 'คิวนี้มีผู้จองแล้ว กรุณาเลือกเวลาอื่น')
+      // UNIQUE INDEX one_active_per_slot / one_held_per_user กันซ้ำอีกชั้นในฐานข้อมูล
+      await db(
+        `INSERT INTO appointments (user_id, appointment_date, slot_time, status, hold_expires_at, created_at, updated_at)
+         VALUES ($1, $2, $3, 'held', $4, $5, $5)`,
+        [userId, slot.date, slot.time, holdExpiresAt, currentTime]
+      )
+    })
   } catch (error) {
-    if (!(error instanceof SlotError)) await client.query('ROLLBACK').catch(() => {})
+    if (isUniqueViolation(error)) throw new SlotError(409, 'SLOT_TAKEN', 'คิวนี้มีผู้จองแล้ว กรุณาเลือกเวลาอื่น')
     throw error
-  } finally {
-    client.release()
   }
 
-  return toHold(row, holdExpiresAt, currentTime)
+  return toHold(slot, holdExpiresAt, currentTime)
 }
 
-// U7 — ปล่อยคิวที่ถืออยู่ (ไม่มีคิวที่ถืออยู่ก็ตอบ ok)
+// U7 — ปล่อยคิวที่ถืออยู่ = ลบแถว held ของฉัน (ไม่มีก็ตอบ ok)
 export async function releaseHold(userId) {
-  await query(
-    `UPDATE time_slots
-     SET slot_status = 'available', held_by_user_id = NULL, hold_expires_at = NULL
-     WHERE held_by_user_id = $1 AND slot_status = 'held'
-     RETURNING slot_id`,
-    [userId]
-  )
+  await query(`DELETE FROM appointments WHERE user_id = $1 AND status = 'held'`, [userId])
   return { ok: true }
 }

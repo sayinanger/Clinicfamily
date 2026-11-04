@@ -10,7 +10,6 @@ import express from 'express'
 import cookieSession from 'cookie-session'
 import { now, toThaiIso } from './lib/clock.js'
 import { SESSION_MAX_AGE_MS } from './lib/auth.js'
-import { ensureSlots } from './services/slots.js'
 import healthRouter from './routes/health.js'
 import adminRouter from './routes/admin.js'
 import userRouter from './routes/user.js'
@@ -112,20 +111,13 @@ app.use((err, req, res, next) => {
   res.status(500).json({ code: 'SERVER_ERROR', message: 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง' })
 })
 
-// ---------- สร้างคิวล่วงหน้า 14 วัน ตอนเปิด server ----------
-// (ระหว่างที่เปิดค้างไว้ จะสร้างเพิ่มเองตอนมีคนขอดูคิวในวันใหม่ — ขั้น I / สัปดาห์ 4)
-// ถ้าต่อฐานข้อมูลไม่ได้ ยังเปิด server ต่อ (ดูสาเหตุได้จาก /api/health)
-try {
-  const created = await ensureSlots()
-  console.log(`📅 เช็กคิวล่วงหน้า 14 วันแล้ว (สร้างใหม่ ${created} คิว) — เวลาระบบ ${toThaiIso(now()).slice(0, 16).replace('T', ' ')} น.`)
-} catch (err) {
-  console.error('สร้างคิวล่วงหน้าไม่สำเร็จ (จะลองใหม่ตอนมีคนขอดูคิว):', err.message)
-}
+// (ไม่ต้องสร้างช่วงเวลาล่วงหน้าแล้ว — ช่วงเวลาคำนวณจากกฎในโค้ด · ฐานข้อมูลเก็บเฉพาะนัดจริง)
+console.log(`🕒 เวลาระบบ ${toThaiIso(now()).slice(0, 16).replace('T', ' ')} น.`)
 
 // ---------- เริ่มรับคำขอ ----------
 app.listen(PORT, () => {
   console.log(`Server พร้อมแล้ว → http://localhost:${PORT}/api/health`)
   if (HAS_CLIENT_BUILD) console.log('🌐 เสิร์ฟหน้าเว็บจาก client/dist ด้วย (/admin, /liff)')
-  // เริ่มตัวตั้งเวลา ทุก 1 นาที: ส่งการ์ดเตือนก่อนนัด + ล้างคิวที่ถือค้าง (ชุด P — lib/reminders.js)
+  // เริ่มตัวตั้งเวลา ทุก 1 นาที: ลบคิวที่ถือค้าง + นัดที่ถึงเวลา → completed + ส่งการ์ดเตือน (lib/reminders.js)
   startScheduler()
 })

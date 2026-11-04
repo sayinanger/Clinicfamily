@@ -77,7 +77,7 @@ router.get('/slots', requirePatient, requirePdpa, async (req, res) => {
   }
 })
 
-// U6. POST /api/holds — ถือคิว ส่ง { slotId, purpose: 'book' | 'reschedule' } (ต้องกรอกประวัติก่อน)
+// U6. POST /api/holds — ถือคิว ส่ง { slotId: 'YYYY-MM-DDTHH:MM', purpose: 'book' | 'reschedule' } (ต้องกรอกประวัติก่อน)
 router.post('/holds', requirePatient, requirePdpa, requireProfile, async (req, res) => {
   try {
     res.json(await holdSlot(req.user, req.body))

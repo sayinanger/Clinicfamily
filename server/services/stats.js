@@ -1,13 +1,14 @@
 // สถิติการนัดหมาย — ขั้น J: S10 (สถิติรายเดือน) / S11 (อัตราไม่มาย้อนหลัง)
 //
 // กฎที่ใช้ (project-snapshot หมวด 5 + ตัดสินขั้น J):
-// - นับตาม "เดือนของวันนัด" (slot_date ของคิว)
-// - มาตามนัด (attended) = นัด booked ที่ถึงเวลาเริ่มแล้ว (เวลาตอนนี้ ≥ เวลานัด) — เส้นเดียวกับปุ่ม [ไม่มา] (J2ก)
+// - นับตาม "เดือนของวันนัด" (appointment_date) · ไม่นับแถว held (ยังไม่ใช่นัด)
+// - มาตามนัด (attended) = completed (ถึงเวลานัดแล้ว และ staff ไม่ได้กด [ไม่มา])
+//   + booked ที่ถึงเวลาแล้วแต่ cron ยังไม่ทันเปลี่ยน — เส้นเดียวกับปุ่ม [ไม่มา] (J2ก, 319ก)
 //   นัด booked ที่ยังไม่ถึงเวลา นับใน total อย่างเดียว
 // - อัตราไม่มา = ไม่มา ÷ (มา + ไม่มา) × 100 ทศนิยม 1 ตำแหน่ง (ไม่นับยกเลิก) · ตัวหารเป็น 0 → null
 // - diffPoints = อัตราเดือนนี้ − อัตราเดือนก่อน โดยใช้ตัวเลขที่ปัดแล้ว (ตรงกับที่จอแสดง) (J5ก)
 // - วันทำการ / จำนวนคิว นับจากปฏิทินเสมอ = เสาร์–อาทิตย์ในเดือน × 12 คิว
-//   (ไม่หักคิวที่ปิด J3ก · เดือนที่ไม่มีนัดก็นับ J4ก · ไม่นับจาก time_slots เพราะสร้างล่วงหน้าแค่ 14 วัน)
+//   (ไม่หักคิวที่ปิด J3ก · เดือนที่ไม่มีนัดก็นับ J4ก · ไม่มีตารางช่วงเวลา — ช่วงเวลาคำนวณจากกฎ)
 // - เวลาปัจจุบันมาจาก clock.js เท่านั้น (DEMO_NOW ใช้ได้)
 
 import { query } from '../db.js'
@@ -63,10 +64,10 @@ function calculateNoShowRate(counts) {
 // คืน { 'YYYY-MM': { total, attended, noShow, cancelled } } (เดือนที่ไม่มีนัด → ทุกค่าเป็น 0)
 async function countAppointmentsByMonth(fromMonth, toMonth, currentTime) {
   const result = await query(
-    `SELECT a.status, t.slot_date, t.start_time
-     FROM appointments a
-     JOIN time_slots t ON t.slot_id = a.slot_id
-     WHERE t.slot_date >= $1 AND t.slot_date < $2`,
+    `SELECT status, appointment_date, slot_time
+     FROM appointments
+     WHERE appointment_date >= $1 AND appointment_date < $2
+       AND status <> 'held'`,
     [`${fromMonth}-01`, `${addMonths(toMonth, 1)}-01`], // ตั้งแต่วันที่ 1 ของเดือนแรก ถึงก่อนวันที่ 1 ของเดือนถัดจากเดือนสุดท้าย
   )
 
@@ -76,12 +77,13 @@ async function countAppointmentsByMonth(fromMonth, toMonth, currentTime) {
   }
 
   for (const row of result.rows) {
-    const counts = countsByMonth[row.slot_date.slice(0, 7)]
+    const counts = countsByMonth[row.appointment_date.slice(0, 7)]
     counts.total++
     if (row.status === 'no_show') counts.noShow++
     else if (row.status === 'cancelled') counts.cancelled++
-    // booked: ถึงเวลานัดแล้ว = มาตามนัด · ยังไม่ถึง = นับใน total อย่างเดียว
-    else if (currentTime >= bangkokTime(row.slot_date, row.start_time)) counts.attended++
+    else if (row.status === 'completed') counts.attended++
+    // booked: ถึงเวลานัดแล้ว (cron ยังไม่ทันเปลี่ยน) = มาตามนัด · ยังไม่ถึง = นับใน total อย่างเดียว
+    else if (currentTime >= bangkokTime(row.appointment_date, row.slot_time)) counts.attended++
   }
   return countsByMonth
 }

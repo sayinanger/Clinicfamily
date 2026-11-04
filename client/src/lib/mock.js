@@ -53,7 +53,7 @@ function nextOpenDay() {
   return toDateString(day)
 }
 
-// วันสุดท้ายที่มีเวลาให้จอง = วันนี้ + 14 วัน (server จริงสร้างเวลาล่วงหน้าแค่นี้)
+// วันสุดท้ายที่มีเวลาให้จอง = วันนี้ + 14 วัน (server จริงเปิดให้จองล่วงหน้าแค่นี้)
 // วันที่ไกลกว่านี้ → ยังไม่มีเวลา และยังไม่มีนัด
 function isBeyondBookingRange(dateString) {
   const lastDay = new Date()
@@ -151,7 +151,6 @@ const exampleStatusWhenNoAppointment = { '08:30': 'held', '08:45': 'closed', '09
 
 // เก็บเวลาที่สร้างแล้วของแต่ละวัน { 'YYYY-MM-DD': [slot, ...] } → กดปิด/เปิดแล้วจำค่าไว้
 const slotsByDate = {}
-let nextSlotId = 101
 
 // เวลาจบคิว = เวลาเริ่ม + 15 นาที เช่น '07:45' → '08:00'
 function addFifteenMinutes(startTime) {
@@ -181,7 +180,8 @@ function getSlotsOfDate(date) {
         // เลยเวลาแล้ว: สมมติตอนนี้ ~08:05 ของวันเปิดทำการถัดไป (เหมือนหน้ารายการนัด) → คิวถึง 08:00 เลยเวลา
         //            วันที่ย้อนหลัง → ทุกคิวเลยเวลา
         const isPast = date < nextOpenDay() || (isNextOpenDay && startTime <= '08:00')
-        return { slotId: nextSlotId++, startTime, endTime: addFifteenMinutes(startTime), status, isPast }
+        // slotId = ข้อความวัน-เวลา 'YYYY-MM-DDTHH:MM' แบบเดียวกับ server จริง (320ก)
+        return { slotId: `${date}T${startTime}`, startTime, endTime: addFifteenMinutes(startTime), status, isPast }
       })
     }
   }
@@ -191,7 +191,7 @@ function getSlotsOfDate(date) {
 // หาเวลาจาก id (ค้นทุกวันที่สร้างไว้แล้ว)
 function findSlot(slotId) {
   for (const list of Object.values(slotsByDate)) {
-    const found = list.find((item) => item.slotId === Number(slotId))
+    const found = list.find((item) => item.slotId === String(slotId))
     if (found) return found
   }
   throw mockError(404, 'NOT_FOUND', 'ไม่พบช่วงเวลานี้')
@@ -806,7 +806,7 @@ function bookingDates() {
 // หาเวลาจาก id พร้อมบอกว่าอยู่วันไหน → { slot, date }
 function findSlotWithDate(slotId) {
   for (const [date, list] of Object.entries(slotsByDate)) {
-    const slot = list.find((item) => item.slotId === Number(slotId))
+    const slot = list.find((item) => item.slotId === String(slotId))
     if (slot) return { slot, date }
   }
   throw mockError(404, 'NOT_FOUND', 'ไม่พบช่วงเวลานี้')
@@ -1082,7 +1082,7 @@ handlers.push(
       requirePatientPdpa()
       requirePatientProfile()
       clearExpiredHold()
-      if (!mockHold || mockHold.slotId !== Number(body?.slotId)) {
+      if (!mockHold || mockHold.slotId !== String(body?.slotId)) {
         throw mockError(410, 'HOLD_EXPIRED', 'หมดเวลายืนยันการจอง คิวถูกปล่อยให้ผู้อื่นจองได้แล้ว')
       }
       throwIfHasActiveAppointment()
@@ -1175,7 +1175,7 @@ handlers.push(
       if (!oldAppointment) {
         throw mockError(404, 'NOT_FOUND', 'ไม่มีนัดที่จะเลื่อน')
       }
-      if (!mockHold || mockHold.slotId !== Number(body?.slotId)) {
+      if (!mockHold || mockHold.slotId !== String(body?.slotId)) {
         throw mockError(410, 'HOLD_EXPIRED', 'หมดเวลายืนยันการเลื่อนนัด คิวถูกปล่อยให้ผู้อื่นจองได้แล้ว')
       }
 

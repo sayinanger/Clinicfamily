@@ -112,16 +112,16 @@ router.get('/admin/slots', requireStaff, async (req, res) => {
   res.json({ date, slots: await listAdminSlots(date) })
 })
 
-// S8. POST /api/admin/slots/:id/close — กด [ปิด]
+// S8. POST /api/admin/slots/:id/close — กด [ปิด] (:id = slotId แบบ 'YYYY-MM-DDTHH:MM' · เก็บว่าเจ้าหน้าที่คนไหนปิด)
 router.post('/admin/slots/:id/close', requireStaff, async (req, res) => {
   try {
-    res.json(await closeSlot(req.params.id))
+    res.json(await closeSlot(req.params.id, req.staffId))
   } catch (error) {
     sendKnownError(res, error)
   }
 })
 
-// S9. POST /api/admin/slots/:id/open — กด [เปิด]
+// S9. POST /api/admin/slots/:id/open — กด [เปิด] (:id = slotId แบบ 'YYYY-MM-DDTHH:MM')
 router.post('/admin/slots/:id/open', requireStaff, async (req, res) => {
   try {
     res.json(await openSlot(req.params.id))

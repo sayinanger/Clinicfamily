@@ -1,10 +1,11 @@
 // ชุด P — ข้อความเตือนก่อนนัด (cron + ปุ่มเดโม D1) และล้างคิวที่ถือค้าง
 //
-// cron (node-cron) ตื่นทุก 1 นาที แล้วทำ 2 อย่าง:
+// cron (node-cron) ตื่นทุก 1 นาที แล้วทำ 3 อย่าง:
 //   1) ส่งการ์ดเตือน 2 แบบ
 //      - day_before = 07:00 ของวันก่อนนัด
 //      - before_2h  = 2 ชั่วโมงก่อนนัด
-//   2) ล้างคิว held ที่หมดเวลาถือ → available (M6ก — ระบบถือว่าว่างอยู่แล้ว ขั้นนี้แค่เก็บกวาดข้อมูล)
+//   2) ลบแถว held ที่หมดเวลาถือ (M6ก, 321 — ระบบถือว่าว่างอยู่แล้ว ขั้นนี้แค่เก็บกวาดข้อมูล)
+//   3) นัด booked ที่ถึงเวลานัดแล้ว → completed (319ก — โค้ดถือว่าเลยเวลา = completed อยู่แล้ว ขั้นนี้ทำให้ตารางตรง)
 //
 // กติกาการเตือน (claude/time-rules-v2.md + project-snapshot หมวด 5):
 //   - ส่งเฉพาะนัด booked
@@ -16,7 +17,7 @@
 //   - ผู้ป่วย seed (รหัส LINE ปลอม) → LINE ปฏิเสธ → บันทึก failed (O16ก)
 //   - LINE_PUSH_ENABLED ไม่ใช่ true → พิมพ์ลง Terminal และบันทึก sent (P6ก — ไม่พิมพ์ซ้ำทุกนาที)
 //
-// ปุ่มเดโม D1 (sendReminderNow): ส่งทันที ไม่ดูกติกาข้างบน เช็กแค่นัดเป็น booked (P4ก)
+// ปุ่มเดโม D1 (sendReminderNow): ส่งทันที ไม่ดูกติกาข้างบน เช็กแค่นัดเป็น booked หรือ completed (P4ก — หน้าเว็บแสดงทั้งคู่เป็น "ยืนยันแล้ว")
 //   บันทึก/อัปเดตแถว notifications ของ (นัด + แบบ) — กดซ้ำได้ อัปเดต sent_at (O17ก)
 
 import cron from 'node-cron'
@@ -24,7 +25,7 @@ import { query } from '../db.js'
 import { now, toThaiIso, bangkokTime, addDays } from './clock.js'
 import { MINUTE_MS, SHORT_NOTICE_MS } from './rules.js'
 import { reminderMessage, sendLineMessage, REMINDER_TYPES } from './lineMessages.js'
-import { AppointmentError, toPatientAppointment } from '../services/appointments.js'
+import { AppointmentError, toPatientAppointment, APPOINTMENT_START_SQL } from '../services/appointments.js'
 
 // ส่งช้ากว่าเวลาส่งได้ไม่เกินเท่านี้ (เลยแล้วข้าม)
 const SEND_WINDOW_MS = 10 * MINUTE_MS
@@ -37,30 +38,29 @@ const MAX_INTEGER = 2147483647
 const SELECT_REMINDER_ROW = `
   SELECT a.appointment_id, a.status, a.created_at, a.updated_at,
          u.line_user_id, u.first_name, u.last_name,
-         t.slot_date, t.start_time, t.end_time
+         a.appointment_date, a.slot_time
   FROM appointments a
-  JOIN time_slots t ON t.slot_id = a.slot_id
   JOIN users u ON u.user_id = a.user_id`
 
 // เวลาที่ต้องส่งเตือนแต่ละแบบ (Date)
-export function reminderSendTime(type, slotDate, startTime) {
-  if (type === 'day_before') return bangkokTime(addDays(slotDate, -1), '07:00')
-  return new Date(bangkokTime(slotDate, startTime).getTime() - BEFORE_2H_MS)
+export function reminderSendTime(type, appointmentDate, slotTime) {
+  if (type === 'day_before') return bangkokTime(addDays(appointmentDate, -1), '07:00')
+  return new Date(bangkokTime(appointmentDate, slotTime).getTime() - BEFORE_2H_MS)
 }
 
 // นัดนี้ "ถึงเวลาส่ง" เตือนแบบ type ตอน currentTime ไหม (ยังไม่ดูว่าเคยส่งแล้วหรือยัง — SQL เช็กเอง)
-// row ต้องมี status, slot_date, start_time, created_at, updated_at
+// row ต้องมี status, appointment_date, slot_time, created_at, updated_at
 export function isReminderDue(type, row, currentTime) {
   if (row.status !== 'booked') return false
 
-  const appointmentTime = bangkokTime(row.slot_date, row.start_time)
+  const appointmentTime = bangkokTime(row.appointment_date, row.slot_time)
   // เวลาจอง/เลื่อนล่าสุด (เลื่อนนัด = updated_at ใหม่ · จองใหม่ = created_at เท่ากับ updated_at)
   const bookedAt = Math.max(row.created_at.getTime(), row.updated_at.getTime())
 
   // นัดกระชั้น → ไม่เตือนเลย
   if (appointmentTime.getTime() - bookedAt < SHORT_NOTICE_MS) return false
 
-  const sendTime = reminderSendTime(type, row.slot_date, row.start_time).getTime()
+  const sendTime = reminderSendTime(type, row.appointment_date, row.slot_time).getTime()
   // จอง/เลื่อนหลังเวลาส่งไปแล้ว → ไม่ส่งแบบนี้
   if (bookedAt >= sendTime) return false
   // ยังไม่ถึงเวลาส่ง หรือเลยมาเกิน 10 นาทีแล้ว → ไม่ส่ง
@@ -94,8 +94,8 @@ export async function sendDueReminders(currentTime = now()) {
   const today = toThaiIso(currentTime).slice(0, 10)
   const result = await query(
     `${SELECT_REMINDER_ROW}
-     WHERE a.status = 'booked' AND t.slot_date BETWEEN $1 AND $2
-     ORDER BY t.slot_date, t.start_time`,
+     WHERE a.status = 'booked' AND a.appointment_date BETWEEN $1 AND $2
+     ORDER BY a.appointment_date, a.slot_time`,
     [today, addDays(today, 2)]
   )
 
@@ -128,13 +128,23 @@ export async function sendDueReminders(currentTime = now()) {
   return counts
 }
 
-// ---------- 2) cron: ล้างคิวที่ถือค้าง (M6ก) ----------
-// คืนจำนวนคิวที่ล้าง
+// ---------- 2) cron: ลบแถว held ที่หมดเวลาถือ (M6ก, 321) ----------
+// คืนจำนวนแถวที่ลบ
 export async function releaseExpiredHolds(currentTime = now()) {
   const result = await query(
-    `UPDATE time_slots
-     SET slot_status = 'available', held_by_user_id = NULL, hold_expires_at = NULL
-     WHERE slot_status = 'held' AND hold_expires_at <= $1`,
+    `DELETE FROM appointments WHERE status = 'held' AND hold_expires_at <= $1`,
+    [currentTime]
+  )
+  return result.rowCount
+}
+
+// ---------- 3) cron: นัดที่ถึงเวลาแล้ว booked → completed (319ก) ----------
+// คืนจำนวนนัดที่เปลี่ยน
+export async function completePastAppointments(currentTime = now()) {
+  const result = await query(
+    `UPDATE appointments
+     SET status = 'completed', updated_at = $1
+     WHERE status = 'booked' AND ${APPOINTMENT_START_SQL} <= $1::timestamptz`,
     [currentTime]
   )
   return result.rowCount
@@ -156,7 +166,9 @@ export async function sendReminderNow(body) {
   const result = await query(`${SELECT_REMINDER_ROW} WHERE a.appointment_id = $1`, [appointmentId])
   const row = result.rows[0]
   if (!row) throw new AppointmentError(404, 'NOT_FOUND', 'ไม่พบนัดหมายนี้')
-  if (row.status !== 'booked') throw new AppointmentError(409, 'INVALID_STATUS', 'นัดนี้ไม่อยู่ในสถานะยืนยันแล้ว')
+  if (row.status !== 'booked' && row.status !== 'completed') {
+    throw new AppointmentError(409, 'INVALID_STATUS', 'นัดนี้ไม่อยู่ในสถานะยืนยันแล้ว')
+  }
 
   const currentTime = now()
   const message = buildReminder(type, row, currentTime)
@@ -184,10 +196,11 @@ export async function runSchedulerOnce() {
   try {
     const currentTime = now()
     const released = await releaseExpiredHolds(currentTime)
+    const completed = await completePastAppointments(currentTime)
     const { sent, failed } = await sendDueReminders(currentTime)
-    if (released || sent || failed) {
+    if (released || completed || sent || failed) {
       const time = toThaiIso(currentTime).slice(11, 16)
-      console.log(`⏰ ${time} cron: ส่งเตือน ${sent} · ส่งไม่สำเร็จ ${failed} · ล้างคิวที่ถือค้าง ${released}`)
+      console.log(`⏰ ${time} cron: ส่งเตือน ${sent} · ส่งไม่สำเร็จ ${failed} · ลบคิวที่ถือค้าง ${released} · นัดถึงเวลาแล้ว ${completed}`)
     }
   } catch (error) {
     // ต่อฐานข้อมูลไม่ได้ ฯลฯ → แค่พิมพ์ไว้ รอบหน้าลองใหม่ (server ไม่ดับ)
@@ -199,6 +212,6 @@ export async function runSchedulerOnce() {
 
 export function startScheduler() {
   cron.schedule('* * * * *', runSchedulerOnce, { timezone: 'Asia/Bangkok' })
-  console.log('⏰ เริ่ม cron แล้ว (ทุก 1 นาที: ส่งเตือนก่อนนัด + ล้างคิวที่ถือค้าง)')
+  console.log('⏰ เริ่ม cron แล้ว (ทุก 1 นาที: ส่งเตือนก่อนนัด + ลบคิวที่ถือค้าง + นัดถึงเวลาแล้ว → completed)')
   runSchedulerOnce() // ทำรอบแรกทันที ไม่ต้องรอขึ้นนาทีใหม่
 }

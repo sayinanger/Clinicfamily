@@ -1,13 +1,16 @@
 // ใส่ข้อมูลตัวอย่าง (seed) ลงตารางที่ db:reset สร้างไว้
 // วิธีรัน: ในโฟลเดอร์ server/ พิมพ์  npm run db:seed
+//   ใส่แค่บัญชีเจ้าหน้าที่ (ฐานข้อมูลจริงก่อนให้ผู้ทดลองใช้งาน — 339ก):  npm run db:seed -- --staff-only
 //   ลำดับที่ถูกต้อง: npm run db:reset → npm run db:seed → รัน check.sql ใน Supabase (ต้องได้ 0 แถว)
 //   ต้องมี SEED_STAFF_PASSWORD ใน server/.env (รหัส login หน้า admin — ตั้งเอง ไม่ขึ้น git)
 //
 // สิ่งที่ใส่ (นับวันจาก "วันที่รัน" เสมอ → รันเดือนไหนกราฟก็มีเส้นครบ):
 //   staff 1 คน · ผู้ป่วยสมมติ 12 คน (line_user_id ขึ้นต้น seed-)
-//   คิวเสาร์–อาทิตย์ ตั้งแต่วันที่ 1 ของ 5 เดือนก่อน ถึงวันนี้ + 14 วัน (วันละ 12 คิว)
 //   นัดย้อนหลัง 5 เดือนเต็ม (ตัวเลขเท่ากับ mock) + เดือนนี้ + นัดล่วงหน้า
-//   ไม่ใส่ notifications (ระบบส่งเตือนจริงทำสัปดาห์ 5) และไม่มีคิว held (ถือคิวหมดอายุใน 5 นาที)
+//   ช่วงที่ staff ปิด 2 ช่วง (closed_slots)
+//   ไม่สร้างช่วงเวลาล่วงหน้า (ไม่มีตารางช่วงเวลาแล้ว — โค้ดคำนวณ 12 ช่วงต่อวันเอง)
+//   ไม่ใส่ notifications และไม่มีแถว held (ถือคิวหมดอายุใน 5 นาที)
+//   นัดในอดีตที่มาตามนัด = completed · ไม่มา = no_show · ยกเลิก = cancelled
 
 import bcrypt from 'bcryptjs'
 import { pool } from '../db.js'
@@ -16,6 +19,9 @@ import { now as clockNow } from '../lib/clock.js'
 // ===================================================================
 // 1) ค่าตั้งต้น
 // ===================================================================
+
+// --staff-only = ใส่แค่บัญชีเจ้าหน้าที่ ไม่มีผู้ป่วยสมมติ/นัดตัวอย่าง/ช่วงที่ปิด (หน้าสถิติจะมีแค่ข้อมูลจริง)
+const STAFF_ONLY = process.argv.includes('--staff-only')
 
 const STAFF_USERNAME = 'staff'
 const STAFF_NAME = 'staff' // ชื่อที่แสดงมุมขวาบนของหน้า admin
@@ -39,7 +45,7 @@ const patients = [
 ]
 
 // นัดย้อนหลัง: ตัวเลขเท่ากับ statsByMonthsAgo ใน client/src/lib/mock.js
-// key = กี่เดือนก่อนเดือนนี้ · มา = booked ที่เลยเวลาแล้ว (ไม่มีสถานะแยก)
+// key = กี่เดือนก่อนเดือนนี้ · มา = completed
 const pastMonthCounts = {
   1: { attended: 77, noShow: 6, cancelled: 7 }, // รวม 90
   2: { attended: 79, noShow: 7, cancelled: 9 }, // รวม 95
@@ -51,8 +57,8 @@ const pastMonthCounts = {
 // 12 เวลาของวันเปิด (07:00–09:45 คิวละ 15 นาที)
 const START_TIMES = ['07:00', '07:15', '07:30', '07:45', '08:00', '08:15', '08:30', '08:45', '09:00', '09:15', '09:30', '09:45']
 
-// นัดล่วงหน้า — วันเปิดที่ 1, 2, 3, ... นับจากวันนี้ (ใส่ได้เฉพาะคิวที่ยังไม่ถึงเวลา)
-// B = ยืนยันแล้ว (booked) · C = ยกเลิก · X = staff ปิดคิว (ไม่มีนัด)
+// นัดล่วงหน้า — วันเปิดที่ 1, 2, 3, ... นับจากวันนี้ (ใส่ได้เฉพาะช่วงที่ยังไม่ถึงเวลา)
+// B = ยืนยันแล้ว (booked) · C = ยกเลิก · X = staff ปิดช่วงนี้ (closed_slots ไม่มีนัด)
 // ผู้ป่วย 1 คนมีนัดที่ยังไม่ถึงเวลาได้ 1 นัด → B รวมทุกวัน = 12 = จำนวนผู้ป่วยพอดี
 const futureDayPatterns = [
   { '07:00': 'B', '07:15': 'B', '07:30': 'C', '07:45': 'B', '08:00': 'B', '08:15': 'B', '08:30': 'B', '08:45': 'C', '09:00': 'B', '09:15': 'B', '09:30': 'B', '09:45': 'B' },
@@ -132,28 +138,28 @@ function buildPlan(now) {
   const firstDay = `${monthsBack(thisMonth, 5)}-01`
   const lastDay = addDays(today, 14)
 
-  // ---------- คิวทุกวันเปิด ----------
-  const slots = [] // { date, time, status, createdAt }
+  // ---------- ช่วงเวลาทุกวันเปิด (ในหน่วยความจำ ใช้เลือกวัน/เวลาให้นัด — ไม่ได้ใส่ลงฐานข้อมูล) ----------
+  const slots = [] // { date, time }
   const slotByKey = {} // 'YYYY-MM-DD HH:MM' → slot
   for (let date = firstDay; date <= lastDay; date = addDays(date, 1)) {
     if (!isOpenDay(date)) continue
     for (const time of START_TIMES) {
-      // ระบบจริงสร้างคิวล่วงหน้า 14 วัน → created_at = 14 วันก่อนวันนั้น (แต่ไม่เกินตอนนี้)
-      const createdAt = earlier(bangkokTime(addDays(date, -14), '00:00'), now)
-      const slot = { date, time, status: 'available', createdAt }
+      const slot = { date, time }
       slots.push(slot)
       slotByKey[`${date} ${time}`] = slot
     }
   }
 
   const appointments = [] // { patientIndex, slot, status, createdAt, updatedAt, noShowAt }
+  const closedSlots = [] // { date, time } ช่วงที่ staff ปิด
 
   // นัดในอดีต: จองไว้ 2 วันก่อนนัด · ยกเลิก 1 วันก่อนนัด · ไม่มา = staff กด 10 นาทีหลังเวลานัด
+  // มา = completed (cron เปลี่ยนตอนถึงเวลานัด → updated_at = เวลานัด)
   function addPastAppointment(patientIndex, slot, kind) {
     const appointmentTime = bangkokTime(slot.date, slot.time)
     const createdAt = new Date(appointmentTime.getTime() - 2 * DAY_MS)
-    let status = 'booked'
-    let updatedAt = createdAt
+    let status = 'completed'
+    let updatedAt = appointmentTime
     let noShowAt = null
     if (kind === 'cancelled') {
       status = 'cancelled'
@@ -163,7 +169,6 @@ function buildPlan(now) {
       noShowAt = minutesLater(appointmentTime, 10)
       updatedAt = noShowAt
     }
-    slot.status = statusOfSlotFor(status)
     appointments.push({ patientIndex, slot, status, createdAt, updatedAt, noShowAt })
   }
 
@@ -222,7 +227,7 @@ function buildPlan(now) {
       if (appointmentTime.getTime() <= now.getTime() + 60 * 60 * 1000) continue
 
       if (mark === 'X') {
-        slot.status = 'closed'
+        closedSlots.push(slot)
         continue
       }
       // ปัดเป็นนาทีเต็ม (ดูใน Table Editor ง่ายกว่า) และให้แต่ละนัดห่างกัน 7 นาที
@@ -231,10 +236,9 @@ function buildPlan(now) {
         minutesLater(oneDayBeforeNow, -7 * appointments.length % (24 * 60))
       )
       if (mark === 'B') {
-        slot.status = 'booked'
         appointments.push({ patientIndex: nextPatient++ % patients.length, slot, status: 'booked', createdAt, updatedAt: createdAt, noShowAt: null })
       } else {
-        // ยกเลิกหลังจอง 1 ชั่วโมง → คิวกลับเป็นว่าง · ผู้ป่วยที่ยกเลิกไม่นับเป็นนัด active
+        // ยกเลิกหลังจอง 1 ชั่วโมง → ช่วงนั้นกลับเป็นว่าง · ผู้ป่วยที่ยกเลิกไม่นับเป็นนัด active
         appointments.push({ patientIndex: (appointments.length * 7) % patients.length, slot, status: 'cancelled', createdAt, updatedAt: minutesLater(createdAt, 60), noShowAt: null })
       }
     }
@@ -246,14 +250,7 @@ function buildPlan(now) {
     return { ...patient, lineUserId: `seed-${String(index + 1).padStart(2, '0')}`, createdAt }
   })
 
-  return { today, firstDay, lastDay, users, slots, appointments }
-}
-
-// สถานะคิวที่คู่กับสถานะนัด (ต้องตรงกับ check.sql ข้อ 3–4)
-// ไม่มา → คิวคง booked (ตกลง 12 ต.ค.): เวลาผ่านแล้วไม่มีใครจองต่อได้ + กด [ไม่มา]/[แก้คืน] แก้แค่ตารางนัด
-function statusOfSlotFor(appointmentStatus) {
-  if (appointmentStatus === 'booked' || appointmentStatus === 'no_show') return 'booked'
-  return 'available' // ยกเลิก → คิวว่าง
+  return { today, firstDay, lastDay, users, appointments, closedSlots }
 }
 
 // ===================================================================
@@ -292,7 +289,7 @@ try {
   // ---------- ตารางต้องว่างก่อน (คำสั่งที่ลบข้อมูลมีแค่ db:reset ตัวเดียว) ----------
   const { rows: countRows } = await client.query(`
     SELECT (SELECT count(*) FROM users) + (SELECT count(*) FROM staff)
-         + (SELECT count(*) FROM time_slots) + (SELECT count(*) FROM appointments)
+         + (SELECT count(*) FROM closed_slots) + (SELECT count(*) FROM appointments)
          + (SELECT count(*) FROM notifications) AS total
   `)
   if (countRows[0].total > 0) {
@@ -307,8 +304,15 @@ try {
     // ทุกตารางใน transaction เดียว: ผ่านหมด หรือไม่เปลี่ยนอะไรเลย
     await client.query('BEGIN')
 
-    await insertMany(client, 'staff', ['username', 'password', 'name'], [[STAFF_USERNAME, passwordHash, STAFF_NAME]])
+    const [insertedStaff] = await insertMany(
+      client,
+      'staff',
+      ['username', 'password', 'name'],
+      [[STAFF_USERNAME, passwordHash, STAFF_NAME]],
+      'staff_id'
+    )
 
+    if (!STAFF_ONLY) {
     const insertedUsers = await insertMany(
       client,
       'users',
@@ -318,32 +322,36 @@ try {
     )
     const userIdOfLine = Object.fromEntries(insertedUsers.map((r) => [r.line_user_id, r.user_id]))
 
-    const insertedSlots = await insertMany(
+    await insertMany(
       client,
-      'time_slots',
-      ['slot_date', 'start_time', 'end_time', 'slot_status', 'created_at'],
-      plan.slots.map((s) => [s.date, s.time, endTimeOf(s.time), s.status, s.createdAt]),
-      'slot_id, slot_date, start_time'
+      'closed_slots',
+      ['slot_date', 'slot_time', 'staff_id'],
+      plan.closedSlots.map((s) => [s.date, s.time, insertedStaff.staff_id])
     )
-    // start_time จาก pg เป็น 'HH:MM:SS' → ตัดเหลือ 'HH:MM'
-    const slotIdOfKey = Object.fromEntries(insertedSlots.map((r) => [`${r.slot_date} ${r.start_time.slice(0, 5)}`, r.slot_id]))
 
     await insertMany(
       client,
       'appointments',
-      ['user_id', 'slot_id', 'status', 'no_show_at', 'created_at', 'updated_at'],
+      ['user_id', 'appointment_date', 'slot_time', 'status', 'no_show_at', 'created_at', 'updated_at'],
       plan.appointments.map((a) => [
         userIdOfLine[plan.users[a.patientIndex].lineUserId],
-        slotIdOfKey[`${a.slot.date} ${a.slot.time}`],
+        a.slot.date,
+        a.slot.time,
         a.status,
         a.noShowAt,
         a.createdAt,
         a.updatedAt,
       ])
     )
+    } // จบ if (!STAFF_ONLY)
 
     await client.query('COMMIT')
-    printSummary(plan)
+    if (STAFF_ONLY) {
+      console.log('✅ ใส่บัญชีเจ้าหน้าที่เรียบร้อย (--staff-only: ไม่มีผู้ป่วยสมมติ นัดตัวอย่าง และช่วงที่ปิด)')
+      console.log('   ขั้นต่อไป: เปิด check.sql ใน SQL Editor ของ Supabase → Run → ต้องได้ 0 แถว')
+    } else {
+      printSummary(plan)
+    }
   }
 } catch (err) {
   await client.query('ROLLBACK').catch(() => {})
@@ -355,18 +363,11 @@ try {
   await pool.end()
 }
 
-// เวลาจบคิว = เวลาเริ่ม + 15 นาที ('07:45' → '08:00')
-function endTimeOf(time) {
-  const [hour, minute] = time.split(':').map(Number)
-  const total = hour * 60 + minute + 15
-  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
-}
-
 // สรุปผลใน Terminal — ตัวเลขรายเดือนไว้เทียบกับหน้าสถิติตอนขั้น J
 function printSummary(plan) {
   const nowMs = getNow().getTime()
   console.log(`✅ ใส่ข้อมูลตัวอย่างเรียบร้อย (ข้อมูลวันที่ ${plan.firstDay} ถึง ${plan.lastDay})`)
-  console.log(`   staff 1 · ผู้ป่วย ${plan.users.length} · คิว ${plan.slots.length} · นัด ${plan.appointments.length} · แจ้งเตือน 0`)
+  console.log(`   staff 1 · ผู้ป่วย ${plan.users.length} · นัด ${plan.appointments.length} · ช่วงที่ปิด ${plan.closedSlots.length} · แจ้งเตือน 0`)
   console.log('   นัดแยกตามเดือนของวันนัด (ใช้เทียบหน้าสถิติ):')
   const byMonth = {}
   for (const a of plan.appointments) {
